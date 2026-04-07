@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3584e4"/>
+      <stop offset="100%" stop-color="#1c71d8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- GNOME-style rounded square canvas -->
+  <rect width="128" height="128" rx="28" ry="28" fill="url(#bg)"/>
+
+  <!-- Back bubble (offset upper-right, semi-transparent) -->
+  <rect x="48" y="18" width="64" height="48" rx="12" fill="white" opacity="0.35"/>
+  <!-- Back bubble tail (lower-right) -->
+  <path d="M98 66 L112 80 L96 66" fill="white" opacity="0.35"/>
+
+  <!-- Front bubble (lower-left, solid white) -->
+  <rect x="16" y="42" width="72" height="52" rx="12" fill="white"/>
+  <!-- Front bubble tail (lower-left) -->
+  <path d="M32 94 L16 112 L48 94" fill="white"/>
+
+  <!-- Three dots inside front bubble -->
+  <circle cx="36" cy="68" r="5.5" fill="#1c71d8"/>
+  <circle cx="52" cy="68" r="5.5" fill="#1c71d8"/>
+  <circle cx="68" cy="68" r="5.5" fill="#1c71d8"/>
+</svg>

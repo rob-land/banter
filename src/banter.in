@@ -1,0 +1,13 @@
+#!/usr/bin/env @PYTHON@
+
+import os
+import sys
+
+pkgdatadir = '@pkgdatadir@'
+moduledir  = '@moduledir@'
+
+sys.path.insert(1, pkgdatadir)
+
+if __name__ == '__main__':
+    from banter.application import main
+    sys.exit(main())

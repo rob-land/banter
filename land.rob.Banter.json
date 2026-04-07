@@ -1,0 +1,57 @@
+{
+  "app-id": "land.rob.Banter",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "49",
+  "sdk": "org.gnome.Sdk",
+  "command": "banter",
+
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=fallback-x11",
+    "--socket=wayland",
+    "--device=dri",
+    "--filesystem=xdg-config",
+    "--filesystem=xdg-cache",
+    "--filesystem=xdg-download",
+    "--talk-name=org.freedesktop.Notifications",
+    "--talk-name=org.gtk.vfs.*"
+  ],
+
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/man",
+    "/share/doc",
+    "/share/gtk-doc",
+    "*.la",
+    "*.a"
+  ],
+
+  "modules": [
+    {
+      "name": "python3-pygobject",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --prefix=/app pygobject"
+      ],
+      "sources": [
+        {
+          "type": "pypi",
+          "name": "pygobject"
+        }
+      ]
+    },
+    {
+      "name": "banter",
+      "buildsystem": "meson",
+      "config-opts": [],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "."
+        }
+      ]
+    }
+  ]
+}
