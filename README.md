@@ -68,7 +68,7 @@ sudo apt install python3 python3-gi python3-gi-cairo gir1.2-gtk-4.0 \
 
 ```bash
 # Clone the repository
-git clone https://gitlab.com/yourname/banter.git
+git clone https://codeberg.com/robland/banter.git
 cd banter
 
 # Configure
