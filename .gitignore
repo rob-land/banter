@@ -1,0 +1,26 @@
+# Build artifacts
+_build/
+_flatpak/
+_flatpak-aarch64/
+repo/
+*.flatpak
+
+# Generated files
+python3-deps.json
+src/const.py
+
+# Claude
+CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
