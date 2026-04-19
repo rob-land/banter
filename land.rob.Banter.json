@@ -30,19 +30,6 @@
 
   "modules": [
     {
-      "name": "python3-pygobject",
-      "buildsystem": "simple",
-      "build-commands": [
-        "pip3 install --prefix=/app pygobject"
-      ],
-      "sources": [
-        {
-          "type": "pypi",
-          "name": "pygobject"
-        }
-      ]
-    },
-    {
       "name": "banter",
       "buildsystem": "meson",
       "config-opts": [],

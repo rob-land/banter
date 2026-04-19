@@ -310,15 +310,28 @@ class GroupMeAPI:
         return r.get("response", {}).get("events", [])
 
     def create_event(self, gid, name: str, start_at: str,
-                     end_at: str = None, location: str = ""):
-        payload = {"event": {"name": name, "start_at": start_at}}
+                     end_at: str = None, location: str = "",
+                     all_day: bool = False):
+        payload = {"event": {"name": name, "start_at": start_at,
+                             "all_day": all_day}}
         if end_at:
             payload["event"]["end_at"] = end_at
         if location:
             payload["event"]["location"] = {"name": location}
-        r = self._req("POST", f"/conversations/{gid}/events",
-                      payload)
+        r = self._req("POST", f"/conversations/{gid}/events", payload)
         return r.get("response")
+
+    def rsvp_event(self, gid, event_id, status):
+        """RSVP to an event. status: 'going' or 'not_going'."""
+        r = self._req("POST",
+                      f"/conversations/{gid}/events/{event_id}/rsvps",
+                      {"rsvp": {"status": status}})
+        return self._ok(r)
+
+    def get_event_rsvps(self, gid, event_id):
+        r = self._req("GET",
+                      f"/conversations/{gid}/events/{event_id}/rsvps")
+        return r.get("response", {})
 
     # ── polls ──
     def get_polls(self, gid):

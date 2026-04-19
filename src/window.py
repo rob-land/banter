@@ -21,7 +21,7 @@ from .dialogs.group import GroupDetailDialog, NewGroupDialog, ContactDetailDialo
 from .dialogs.members import MembersDialog
 from .dialogs.settings import GroupSettingsDialog, PreferencesDialog
 from .dialogs.gallery import GalleryDialog
-from .dialogs.events import CreateEventDialog, CreatePollDialog
+from .dialogs.events import CreateEventDialog, EventsListDialog, CreatePollDialog
 
 
 class MainWindow(Adw.ApplicationWindow):
@@ -222,6 +222,14 @@ class MainWindow(Adw.ApplicationWindow):
                     row.set_unread(row._unread_count.get_text()
                                    and int(row._unread_count.get_text() or 0) + 1
                                    or 1 if row._unread_dot.get_visible() else 1)
+                    # Send a real-time desktop notification via push rather than
+                    # waiting for the bg_poll (which may fire after the user has
+                    # already read the message on another device, making unread=0).
+                    sender = subject.get("name", "Someone")
+                    text   = (subject.get("text") or "📎 attachment").strip()
+                    name   = (self._group_rows[gid].conv or {}).get("name", "GroupMe")
+                    self._send_desktop_notification(
+                        name, f"{sender}: {text}", tag=f"group-{gid}")
                 # Move to top of chats list
                 self._chats_list.remove(row)
                 self._chats_list.insert(row, 0)
@@ -568,6 +576,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Group action menu
         grp_menu = Gio.Menu()
         grp_menu.append("Gallery",       "win.grp-album")
+        grp_menu.append("View Events",   "win.grp-events-view")
         grp_menu.append("Create Event",  "win.grp-event")
         grp_menu.append("Add Poll",      "win.grp-poll")
         grp_menu.append("Share Group",   "win.grp-share")
@@ -833,7 +842,7 @@ class MainWindow(Adw.ApplicationWindow):
             except Exception:
                 pass
 
-        for name in ("grp-album", "grp-event", "grp-poll", "grp-share", "grp-settings"):
+        for name in ("grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
             _remove_action(name)
 
         def _act(name, cb):
@@ -841,8 +850,10 @@ class MainWindow(Adw.ApplicationWindow):
             a.connect("activate", lambda *_: cb())
             win.add_action(a)
 
-        _act("grp-album",    lambda: GalleryDialog(self._api, group, self).present(self))
-        _act("grp-event",    lambda: CreateEventDialog(self._api, group, self).present(self))
+        _act("grp-album",       lambda: GalleryDialog(self._api, group, self).present(self))
+        me_id = (self._current_user or {}).get("id", "")
+        _act("grp-events-view", lambda: EventsListDialog(self._api, group, me_id, self).present(self))
+        _act("grp-event",       lambda: CreateEventDialog(self._api, group, self).present(self))
         _act("grp-poll",     lambda: CreatePollDialog(self._api, group, self).present(self))
         _act("grp-share",    lambda: self._share_group(group))
         _act("grp-settings", lambda: self._open_group_settings(group))
