@@ -42,15 +42,17 @@ class ConversationRow(Adw.ActionRow):
       [avatar]  Name                    [time]
                 Last message preview    [🔕] [●]
     """
-    def __init__(self, conv: dict, conv_type: str, config=None):
+    def __init__(self, conv: dict, conv_type: str, config=None, me_id=None):
         """
         conv_type: "group" or "dm"
         config: Config instance for mute check (optional)
+        me_id: current user's id — used to render "You: " in DM previews
         """
         super().__init__()
         self.conv      = conv
         self.conv_type = conv_type
         self._config   = config
+        self._me_id    = str(me_id) if me_id is not None else None
         self.set_activatable(True)
         self.add_css_class("group-list-row")
 
@@ -70,14 +72,10 @@ class ConversationRow(Adw.ActionRow):
         # ── Title ──
         self.set_title(esc(name))
 
-        # ── Subtitle: last message preview ──
-        if conv_type == "dm":
-            preview = (conv.get("last_message", {}).get("text") or "").strip()
-        else:
-            preview = (conv.get("messages", {})
-                          .get("preview", {}).get("text") or "").strip()
-        if preview:
-            self.set_subtitle(esc(preview[:80]))
+        # ── Subtitle: "Sender: last message preview" ──
+        sender, text = self._initial_preview()
+        if text or sender:
+            self.update_preview(sender, text)
 
         # ── Right-side meta box: [time / mute / dot] stacked ──
         meta = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -140,6 +138,9 @@ class ConversationRow(Adw.ActionRow):
 
     def set_unread(self, count: int):
         count = int(count or 0)
+        # Stash the numeric count so `bump_unread()` / callers can read
+        # it without parsing widget text back into an int.
+        self._unread_count_n = count
         if count <= 0:
             self._unread_dot.set_visible(False)
             self._unread_count.set_visible(False)
@@ -151,20 +152,49 @@ class ConversationRow(Adw.ActionRow):
             self._unread_count.set_text(str(count) if count < 100 else "99+")
             self._unread_count.set_visible(True)
 
+    def bump_unread(self):
+        """Increment the unread count by 1. Safer than reading the
+        badge text back with int()."""
+        self.set_unread(getattr(self, "_unread_count_n", 0) + 1)
+
     def update_time(self, ts):
         self._time_lbl.set_text(_fmt_conv_time(ts))
 
+    # ── Preview helpers ──────────────────────────────────────────────
+    PREVIEW_MAX = 80
 
-# Keep GroupRow/DMRow as aliases for any code that still references them
-class GroupRow(ConversationRow):
-    def __init__(self, group: dict, config=None):
-        super().__init__(group, "group", config)
-        self.group = group
+    def _initial_preview(self) -> tuple:
+        """Derive (sender, text) for the subtitle from the stored conv dict."""
+        conv = self.conv
+        if self.conv_type == "group":
+            preview = conv.get("messages", {}).get("preview", {}) or {}
+            sender  = preview.get("nickname", "")
+            text    = (preview.get("text") or "").strip()
+            if not text and preview.get("attachments"):
+                text = "📎 attachment"
+            return sender, text
 
-class DMRow(ConversationRow):
-    def __init__(self, chat: dict, config=None):
-        super().__init__(chat, "dm", config)
-        self.chat = chat
+        # DM
+        lm        = conv.get("last_message", {}) or {}
+        text      = (lm.get("text") or "").strip()
+        sender_id = str(lm.get("sender_id") or lm.get("user_id") or "")
+        if self._me_id and sender_id == self._me_id:
+            sender = "You"
+        else:
+            sender = (conv.get("other_user", {}) or {}).get("name", "")
+        if not text and lm.get("attachments"):
+            text = "📎 attachment"
+        return sender, text
+
+    def update_preview(self, sender: str, text: str):
+        """Refresh the subtitle to 'Sender: text' (truncated if too long)."""
+        text = (text or "").strip()
+        if not text:
+            text = "📎 attachment"
+        combined = f"{sender}: {text}" if sender else text
+        if len(combined) > self.PREVIEW_MAX:
+            combined = combined[: self.PREVIEW_MAX - 1].rstrip() + "…"
+        self.set_subtitle(esc(combined))
 
 
 class ContactRow(Adw.ActionRow):

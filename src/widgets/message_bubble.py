@@ -8,12 +8,13 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import Gtk, Adw, GLib, Gdk
+from gi.repository import Gtk, Adw, GLib, Gdk, Pango
 
-from ..constants import dbg, esc, DEFAULT_REACTIONS, EMOJI_LOG
+from ..constants import DEBUG, esc, EMOJI_LOG
 from ..api import GroupMeAPI
-from ..helpers import load_image_async, set_avatar_from_url
+from ..helpers import set_avatar_from_url, set_pack_emoji
 from .misc import ImageAttachment
+from .event_card import EventCard
 
 # ── URL / email linkification ─────────────────────────────────────────
 _URL_RE = re.compile(
@@ -67,7 +68,6 @@ class MessageBubble(Gtk.Box):
         # ── Sender header (others only) ──
         if not is_mine:
             hdr = Gtk.Box(spacing=6)
-            hdr.set_cursor(Gdk.Cursor.new_from_name("pointer"))
             av  = Adw.Avatar(size=28,
                              text=esc(msg.get("name", "?")),
                              show_initials=True)
@@ -78,6 +78,8 @@ class MessageBubble(Gtk.Box):
             nm.add_css_class("dim-caption")
             nm.add_css_class("bold-name")
             nm.set_halign(Gtk.Align.START)
+            nm.set_ellipsize(Pango.EllipsizeMode.END)
+            nm.set_max_width_chars(28)
             hdr.append(nm)
 
             ts  = msg.get("created_at", 0)
@@ -90,18 +92,21 @@ class MessageBubble(Gtk.Box):
 
             hdr.set_margin_start(4)
 
-            # Click sender name/avatar → open DM
+            # Click avatar (only) → open the contact detail dialog.
+            # Restricting to the avatar stops accidental taps while
+            # scrolling a group chat on a phone.
             sender_uid  = str(msg.get("user_id", ""))
             sender_info = {
                 "name"      : msg.get("name", ""),
                 "avatar_url": msg.get("avatar_url", ""),
                 "user_id"   : sender_uid,
             }
+            av.set_cursor(Gdk.Cursor.new_from_name("pointer"))
             gest = Gtk.GestureClick()
             gest.connect("pressed",
                          lambda *_, u=sender_uid, s=sender_info:
-                             window.open_dm_for_user(s, u))
-            hdr.add_controller(gest)
+                             window.open_contact_detail(s, u))
+            av.add_controller(gest)
             self.append(hdr)
 
         # ── Bubble ──
@@ -159,12 +164,35 @@ class MessageBubble(Gtk.Box):
                 threading.Thread(target=_fetch_parent, daemon=True).start()
 
         text = (msg.get("text") or "").strip()
-        if text:
+
+        # Pre-scan attachments for a pack-emoji entry; if present, the
+        # text needs to render as an inline mix of labels and images
+        # rather than a single Label.
+        emoji_att = next(
+            (a for a in msg.get("attachments", []) if a.get("type") == "emoji"),
+            None,
+        )
+        used_mixed_text = False
+        if text and emoji_att:
+            placeholder = emoji_att.get("placeholder") or ""
+            charmap     = emoji_att.get("charmap") or []
+            if placeholder and charmap:
+                mixed = self._build_pack_emoji_row(text, placeholder, charmap)
+                if mixed is not None:
+                    bubble.append(mixed)
+                    used_mixed_text = True
+
+        if text and not used_mixed_text:
             markup, has_links = _linkify(text)
             lbl = Gtk.Label(wrap=True)
             lbl.set_xalign(0)
             lbl.set_selectable(True)
             lbl.set_max_width_chars(45)
+            # WORD_CHAR wrapping lets long URLs/unbreakable tokens break
+            # mid-string instead of forcing the label to demand the full
+            # content width. This is what prevents the "header disappears"
+            # bug without collapsing the bubble to 1px.
+            lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
             if has_links:
                 # Use markup so <a href> links are rendered as clickable
                 lbl.set_markup(markup)
@@ -175,9 +203,9 @@ class MessageBubble(Gtk.Box):
             bubble.append(lbl)
 
         for att in msg.get("attachments", []):
-            kind = att.get("type")
-            if kind == "reply":
-                continue   # handled as the quote block above
+            kind = att.get("type", "")
+            if kind in ("reply", "emoji"):
+                continue   # reply → quote block; emoji → handled above
             if kind == "image":
                 img = ImageAttachment(att["url"], window)
                 bubble.append(img)
@@ -186,13 +214,26 @@ class MessageBubble(Gtk.Box):
                     label=f"📍 {att.get('name','Location')}"
                           f"\n{att.get('lat')}, {att.get('lng')}")
                 loc.set_wrap(True)
+                loc.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+                loc.set_max_width_chars(45)
                 loc.set_xalign(0)
                 bubble.append(loc)
             elif kind == "split":
                 lbl = Gtk.Label(label="💳 Split request")
                 bubble.append(lbl)
-            elif kind == "emoji":
-                pass  # GroupMe emoji packs – skip for now
+            elif kind.startswith("event"):
+                # GroupMe shares the "event" attachment across several
+                # system messages — creation, "is going", "is not going",
+                # updates. Only the "created event" post should render a
+                # card; the RSVP follow-ups would otherwise duplicate a
+                # card for every response, cluttering the chat.
+                if "created event" in text.lower():
+                    event_id   = att.get("event_id") or att.get("id")
+                    event_data = att.get("event") if isinstance(att.get("event"), dict) else None
+                    if event_id or event_data:
+                        card = EventCard(api, group_id, me_id,
+                                         event_id, event_data, window)
+                        bubble.append(card)
 
         # Timestamp (mine only, shown inside bubble)
         if is_mine:
@@ -250,6 +291,8 @@ class MessageBubble(Gtk.Box):
         name_lbl = Gtk.Label(label=esc(parent_msg.get("name", "Unknown")))
         name_lbl.add_css_class("reply-quote-name")
         name_lbl.set_xalign(0)
+        name_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        name_lbl.set_max_width_chars(28)
         self._quote_box.append(name_lbl)
 
         # Message preview (first 120 chars)
@@ -270,12 +313,19 @@ class MessageBubble(Gtk.Box):
         text_lbl.add_css_class("reply-quote-text")
         text_lbl.set_xalign(0)
         text_lbl.set_wrap(True)
+        text_lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         text_lbl.set_max_width_chars(40)
         self._quote_box.append(text_lbl)
 
     # ── Reactions ──
     def _render_reactions(self, reactions: list, favorited_by: list):
-        """Rebuild the reactions row from server data."""
+        """Rebuild the reactions row from server data.
+
+        All interactions — adding, removing, switching, seeing reactors —
+        are consolidated into a single ReactionsSheet. Clicking either a
+        pill or the add-reaction button opens the sheet. This avoids the
+        old mix of tooltip / tap-pill-to-switch / tap-empty-row-to-inspect
+        affordances that didn't translate to touch."""
         # Clear
         child = self._reactions_box.get_first_child()
         while child:
@@ -283,52 +333,58 @@ class MessageBubble(Gtk.Box):
             self._reactions_box.remove(child)
             child = nxt
 
-        # Build reaction_map: display_code → {uids, raw_code, is_emoji_pack}
-        # emoji-pack reactions (type="emoji") are shown as 😊 and logged
-        reaction_map = {}   # display_code → {"uids": set, "raw_code": str, "is_pack": bool}
+        # Build reaction_map: unique key → metadata.
+        # For pack reactions, key includes pack_id+offset so multiple
+        # distinct pack emojis don't collapse into a single pill.
+        reaction_map = {}
         for r in (reactions or []):
             r_type = r.get("type", "unicode")
             if r_type == "emoji":
-                display = "😊"
-                is_pack = True
-                # Log the raw emoji reaction data
-                try:
-                    with open(EMOJI_LOG, "a") as f:
-                        f.write(f"{datetime.now().isoformat()}  msg={self._msg.get('id')}  {r}\n")
-                except Exception:
-                    pass
+                pack_id = r.get("pack_id")
+                # GroupMe responses use either `offset` or `pack_index`
+                # depending on endpoint/era — accept both.
+                offset  = r.get("offset")
+                if offset is None:
+                    offset = r.get("pack_index")
+                key     = f"pack:{pack_id}:{offset}"
+                entry = {
+                    "uids"     : set(),
+                    "raw_code" : r.get("placeholder") or "😊",
+                    "is_pack"  : True,
+                    "pack_id"  : pack_id,
+                    "offset"   : offset,
+                }
+                # Capture pack reaction shapes for schema investigation.
+                # Gated on DEBUG so a chat with many pack reactions
+                # doesn't do synchronous disk writes on every re-render.
+                if DEBUG:
+                    try:
+                        with open(EMOJI_LOG, "a") as f:
+                            f.write(f"{datetime.now().isoformat()}  msg={self._msg.get('id')}  {r}\n")
+                    except Exception:
+                        pass
             else:
-                display = r.get("code") or "❤️"
-                is_pack = False
+                code = r.get("code") or "❤️"
+                key  = code
+                entry = {
+                    "uids"     : set(),
+                    "raw_code" : code,
+                    "is_pack"  : False,
+                }
             uid_list = r.get("user_ids", [])
-            if display not in reaction_map:
-                reaction_map[display] = {"uids": set(), "raw_code": display, "is_pack": is_pack}
-            reaction_map[display]["uids"].update(str(u) for u in uid_list)
+            if key not in reaction_map:
+                reaction_map[key] = entry
+            reaction_map[key]["uids"].update(str(u) for u in uid_list)
 
         # Legacy heart likes fallback
         if favorited_by and not reaction_map:
             uids = set(str(u) for u in favorited_by)
             reaction_map["❤️"] = {"uids": uids, "raw_code": "❤️", "is_pack": False}
 
-        me          = self._me
-        i_reacted   = any(me in v["uids"] for v in reaction_map.values())
-        my_code     = next((c for c, v in reaction_map.items() if me in v["uids"]), None)
-
-        # Build member-name lookup from the group/DM cache if available
-        def _uid_names(uid_set: set) -> str:
-            """Return comma-joined display names for a set of user IDs."""
-            names = []
-            for uid in uid_set:
-                if uid == me:
-                    names.append("You")
-                else:
-                    # Try to look up from the window's member cache
-                    name = self._win.get_user_name(uid) if hasattr(self._win, "get_user_name") else uid
-                    names.append(name)
-            return ", ".join(sorted(names)) if names else "?"
+        me = self._me
 
         # Reaction pills
-        for code, info in reaction_map.items():
+        for _, info in reaction_map.items():
             uid_set = info["uids"]
             count   = len(uid_set)
             i_used  = me in uid_set
@@ -339,134 +395,143 @@ class MessageBubble(Gtk.Box):
             if i_used:
                 pill.add_css_class("reaction-pill-mine")
 
-            lbl = Gtk.Label(label=f"{code} {count}")
-            lbl.set_use_markup(False)
-            pill.set_child(lbl)
+            pill_content = Gtk.Box(spacing=4)
+            if info.get("is_pack"):
+                emoji_widget = Gtk.Image()
+                emoji_widget.set_pixel_size(18)
+                pid, off = info.get("pack_id"), info.get("offset")
+                if pid is not None and off is not None:
+                    set_pack_emoji(emoji_widget, pid, off, 18)
+                pill_content.append(emoji_widget)
+            else:
+                emoji_lbl = Gtk.Label(label=info.get("raw_code", ""))
+                pill_content.append(emoji_lbl)
+            count_lbl = Gtk.Label(label=str(count))
+            pill_content.append(count_lbl)
+            pill.set_child(pill_content)
 
-            # Tooltip: list of reactors
-            pill.set_tooltip_text(_uid_names(uid_set))
-
-            raw_code = info["raw_code"]
-            pill.connect("clicked", self._on_reaction_pill, raw_code, i_used, my_code)
+            pill.connect("clicked",
+                         lambda *_, m=reaction_map: self._open_reactions_sheet(m))
             self._reactions_box.append(pill)
 
-        # "+" button — only when the user has NOT reacted yet
-        if not i_reacted:
-            add_btn = Gtk.Button()
-            add_btn.set_icon_name("list-add-symbolic")
-            add_btn.add_css_class("flat")
-            add_btn.add_css_class("circular")
-            add_btn.set_tooltip_text("Add reaction")
-            # Store known reaction codes from this message for the picker
-            existing = list(reaction_map.keys())
-            add_btn.connect("clicked", self._on_add_reaction, existing)
-            self._reactions_box.append(add_btn)
+        # Add-reaction button — always shown so the user can change or
+        # add new reactions even when they've already reacted.
+        add_btn = self._make_add_reaction_btn()
+        add_btn.connect("clicked",
+                        lambda *_, m=reaction_map: self._open_reactions_sheet(m))
+        self._reactions_box.append(add_btn)
 
-        # Click on the reactions box itself (if there are reactions) → detail dialog
-        if reaction_map:
-            gest = Gtk.GestureClick()
-            gest.connect("pressed",
-                         lambda *_: self._show_reaction_detail(reaction_map))
-            self._reactions_box.add_controller(gest)
+    def _open_reactions_sheet(self, reaction_map: dict):
+        try:
+            from .reactions_sheet import ReactionsSheet
+            sheet = ReactionsSheet(self, reaction_map)
+            sheet.present(self._win)
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            # Always print to stderr so the user running from a terminal
+            # can see the full stack, regardless of --debug.
+            import sys
+            print("=== ReactionsSheet failed ===", file=sys.stderr)
+            print(tb, file=sys.stderr)
+            print("=============================", file=sys.stderr)
+            if hasattr(self._win, "toast"):
+                self._win.toast(f"Reactions unavailable: {e}")
 
-    def _on_reaction_pill(self, btn, code: str, i_used: bool, my_code: str | None):
-        """Handle a reaction pill click.
+    def _build_pack_emoji_row(self, text: str, placeholder: str, charmap: list):
+        """Build an inline text+image layout for a message carrying a
+        pack-emoji attachment.
 
-        - Own reaction  → remove it
-        - Different user's reaction, no current reaction → add that reaction
-        - Different user's reaction, already reacted differently → change reaction
-        """
-        gid = self._gid
-        mid = self._msg["id"]
-        if i_used:
-            # Remove own reaction
-            def worker():
-                ok = self._api.unreact_message(gid, mid)
-                if ok:
-                    GLib.idle_add(self._refresh_from_server)
-            threading.Thread(target=worker, daemon=True).start()
-        else:
-            # Add/change to this reaction code
-            def worker():
-                # If we have a different reaction, remove it first
-                if my_code:
-                    self._api.unreact_message(gid, mid)
-                ok = self._api.react_message(gid, mid, code)
-                if ok:
-                    GLib.idle_add(self._refresh_from_server)
-            threading.Thread(target=worker, daemon=True).start()
+        GroupMe places a placeholder unicode character in `text` at each
+        position where a pack emoji should appear; `charmap` supplies
+        (pack_id, offset) pairs in order. We split the text at placeholder
+        occurrences and weave in Gtk.Image widgets.
 
-    def _on_add_reaction(self, btn, existing_codes: list):
-        """Show the reaction picker popover."""
-        # Merge default reactions with any seen on this message
-        seen = [c for c in existing_codes if c != "😊"]   # exclude emoji-pack placeholder
-        offered = list(dict.fromkeys(DEFAULT_REACTIONS + seen))   # deduplicated, order preserved
+        Returns a Gtk.FlowBox-based widget that wraps reasonably on narrow
+        screens. For pure emoji messages (text is only placeholders) this
+        is a compact row of images; for mixed messages, text and images
+        flow together word-by-word."""
+        if not placeholder or not charmap:
+            return None
 
-        popover = Gtk.Popover()
-        popover.set_parent(btn)
+        # Split the text at placeholder boundaries, preserving the gaps.
+        segments = []
+        last = 0
+        emoji_idx = 0
+        i = 0
+        while i < len(text):
+            if text[i] == placeholder:
+                if i > last:
+                    segments.append(("text", text[last:i]))
+                if emoji_idx < len(charmap):
+                    pair = charmap[emoji_idx]
+                    pack_id = pair[0] if len(pair) > 0 else None
+                    offset  = pair[1] if len(pair) > 1 else None
+                    segments.append(("emoji", pack_id, offset))
+                emoji_idx += 1
+                last = i + 1
+            i += 1
+        if last < len(text):
+            segments.append(("text", text[last:]))
+
+        # Nothing to mix — caller will fall back to the plain text label.
+        if not any(s[0] == "emoji" for s in segments):
+            return None
 
         flow = Gtk.FlowBox()
         flow.set_selection_mode(Gtk.SelectionMode.NONE)
-        flow.set_min_children_per_line(5)
-        flow.set_max_children_per_line(10)
         flow.set_column_spacing(2)
         flow.set_row_spacing(2)
-        flow.set_margin_start(6); flow.set_margin_end(6)
-        flow.set_margin_top(6);  flow.set_margin_bottom(6)
+        flow.set_min_children_per_line(1)
+        flow.set_max_children_per_line(64)
+        flow.set_homogeneous(False)
+        flow.set_halign(Gtk.Align.START)
 
-        for emoji in offered:
-            eb = Gtk.Button(label=emoji)
-            eb.add_css_class("flat")
-            eb.set_size_request(36, 36)
-            code = emoji
-            def on_pick(b, c=code):
-                popover.popdown()
-                gid = self._gid
-                mid = self._msg["id"]
-                def worker():
-                    ok = self._api.react_message(gid, mid, c)
-                    if ok:
-                        GLib.idle_add(self._refresh_from_server)
-                threading.Thread(target=worker, daemon=True).start()
-            eb.connect("clicked", on_pick)
-            flow.append(eb)
+        for seg in segments:
+            if seg[0] == "text":
+                # Split text segments on whitespace so the FlowBox can
+                # wrap between words instead of forcing the full segment
+                # onto one line.
+                chunk = seg[1]
+                for word in chunk.split(" "):
+                    if not word:
+                        continue
+                    lbl = Gtk.Label(label=word)
+                    lbl.set_xalign(0)
+                    flow.append(lbl)
+            else:
+                _, pack_id, offset = seg
+                img = Gtk.Image()
+                img.set_pixel_size(22)
+                if pack_id is not None and offset is not None:
+                    set_pack_emoji(img, pack_id, offset, 22)
+                flow.append(img)
+        return flow
 
-        popover.set_child(flow)
-        popover.popup()
+    def _make_add_reaction_btn(self):
+        """Compact add-reaction button: a symbolic smiley (takes the
+        label text color) next to a small '+' glyph.
 
-    def _show_reaction_detail(self, reaction_map: dict):
-        """Show an alert dialog listing all reactions and who gave them."""
-        dlg = Adw.AlertDialog(
-            heading="Reactions",
-            body="")
-        dlg.add_response("close", "Close")
+        We avoid Gtk.Overlay here — it was eating click events on the
+        Button in practice, leaving the control unresponsive."""
+        box = Gtk.Box(spacing=1)
+        box.set_valign(Gtk.Align.CENTER)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        box.set_margin_start(8); box.set_margin_end(8)
-        box.set_margin_top(4);   box.set_margin_bottom(4)
+        smiley = Gtk.Image.new_from_icon_name("face-smile-symbolic")
+        smiley.set_pixel_size(14)
+        box.append(smiley)
 
-        for code, info in reaction_map.items():
-            row = Gtk.Box(spacing=8)
-            emoji_lbl = Gtk.Label(label=code)
-            emoji_lbl.set_xalign(0)
-            row.append(emoji_lbl)
+        plus = Gtk.Label(label="+")
+        plus.add_css_class("reaction-add-plus")
+        plus.set_valign(Gtk.Align.CENTER)
+        box.append(plus)
 
-            names = []
-            for uid in info["uids"]:
-                if uid == self._me:
-                    names.append("You")
-                else:
-                    name = self._win.get_user_name(uid) if hasattr(self._win, "get_user_name") else uid
-                    names.append(name)
-            names_lbl = Gtk.Label(label=", ".join(sorted(names)))
-            names_lbl.set_xalign(0)
-            names_lbl.set_wrap(True)
-            names_lbl.add_css_class("dim-label")
-            row.append(names_lbl)
-            box.append(row)
-
-        dlg.set_extra_child(box)
-        dlg.present(self._win)
+        btn = Gtk.Button()
+        btn.add_css_class("flat")
+        btn.add_css_class("reaction-add-btn")
+        btn.set_child(box)
+        btn.set_tooltip_text("Add reaction")
+        return btn
 
     def _refresh_from_server(self):
         """Re-fetch this single message from the API and re-render reactions."""

@@ -7,7 +7,7 @@ gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib
 
-from ..constants import dbg, esc
+from ..constants import esc
 from ..config import Config
 from ..helpers import set_avatar_from_url
 

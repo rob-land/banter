@@ -21,13 +21,45 @@ APP_CSS = """
 /* ── Reaction pills ── */
 .reaction-pill {
     border-radius: 999px;
-    padding: 0 6px;
-    min-height: 24px;
+    padding: 0 8px;
+    min-height: 32px;
     font-size: 0.85em;
 }
 .reaction-pill-mine {
     background-color: alpha(@accent_bg_color, 0.18);
     color: @accent_fg_color;
+}
+
+/* ── Add-reaction button: smiley + tiny "+" badge ── */
+.reaction-add-btn {
+    min-width: 0;
+    min-height: 0;
+    padding: 3px 4px;
+    border-radius: 999px;
+}
+.reaction-add-plus {
+    /* Fixed color rather than @accent_bg_color so the + looks the same
+       on every device — the user's theme accent varies wildly
+       (blue on GNOME, orange on FuriOS, green on OnePlus Droidian). */
+    color: #3584e4;
+    font-weight: bold;
+    font-size: 0.85em;
+    margin-left: 1px;
+}
+
+/* ── Reactions sheet picker buttons ── */
+.reaction-picker-btn {
+    border-radius: 10px;
+    padding: 2px;
+    font-size: 1.3em;
+}
+.reaction-picker-mine {
+    background-color: alpha(@accent_bg_color, 0.25);
+}
+
+/* Bottom category navigator — thin divider above */
+.reaction-category-nav {
+    border-top: 1px solid alpha(@borders, 0.5);
 }
 
 /* ── New-messages banner ── */
@@ -67,10 +99,15 @@ APP_CSS = """
     border-top: 1px solid alpha(@borders, 0.5);
     padding: 8px;
 }
+.compose-btn {
+    min-width: 44px;
+    min-height: 44px;
+}
 
 /* ── Sidebar ── */
 .group-list-row {
     padding: 4px 0;
+    min-height: 60px;
 }
 
 /* ── Status badges ── */
@@ -151,6 +188,20 @@ APP_CSS = """
     border-radius: 16px;
     padding: 24px;
     box-shadow: 0 2px 12px alpha(black, 0.15);
+}
+
+/* ── Event card (inline in message bubble) ── */
+.event-card {
+    background-color: alpha(@window_bg_color, 0.5);
+    border: 1px solid alpha(@borders, 0.6);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+.msg-bubble.mine .event-card {
+    background-color: alpha(@accent_fg_color, 0.12);
+    border-color: alpha(@accent_fg_color, 0.25);
 }
 
 /* ── Reply quote block ── */

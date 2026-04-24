@@ -54,18 +54,37 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 EMOJI_LOG   = CONFIG_DIR / "emoji_reactions.log"
 
 # ── GroupMe endpoints ────────────────────────────────────────────────
-GROUPME_API   = "https://api.groupme.com/v3"
-GROUPME_IMAGE = "https://image.groupme.com"
-GROUPME_PUSH  = "https://push.groupme.com/faye"
+GROUPME_API      = "https://api.groupme.com/v3"
+GROUPME_IMAGE    = "https://image.groupme.com"
+GROUPME_PUSH     = "https://push.groupme.com/faye"
+GROUPME_POWERUPS = "https://powerup.groupme.com"
 
 # ── OAuth ────────────────────────────────────────────────────────────
 OAUTH_PORT          = 7654
 OAUTH_AUTHORIZE_URL = "https://oauth.groupme.com/oauth/authorize"
 
 # ── Default reactions ────────────────────────────────────────────────
+# Broad set of common reactions. We initially thought GroupMe gated the
+# set, but the 500s we saw were actually the wrong endpoint/body —
+# /messages/{gid}/{mid}/like with a like_icon body accepts any unicode
+# or ZWJ-sequence emoji.
 DEFAULT_REACTIONS = [
-    "❤️","👍","👎","😂","🤣","😮","😢","😭","🔥","🎉",
-    "👀","🙏","💀","🫶","🤬","💅","🫠","🥺","😍","🤔",
+    # Hearts + affection
+    "❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎",
+    "❤️‍🔥","💖","💗","💓","💞","💕","💘","💝","💔",
+    # Smiley faces
+    "😂","🤣","😊","😇","🙂","😎","🥰","😍","😘","🥲",
+    "🤔","🙄","😐","😏","😑","😴","🥱","🤤","🤗","🤭",
+    "🤫","🤐","🤪","🥳","🤓","🧐","😮","😯","😲","🤯",
+    "😢","😭","🥺","😤","😠","😡","🤬","🤮","🤢","🤕",
+    "😱","😨","😰","😓","🥶","🥵","😇","🫠","🫡","🫢",
+    # Gestures + hands
+    "👍","👎","👏","🙏","🫶","🤝","🤲","👐","🙌","💪",
+    "✌️","🤞","🤟","🤘","🤙","👌","🫰","👀","🤷","🤦",
+    # Objects + symbols
+    "🔥","🎉","✨","💯","💀","☠️","💩","🐐","👑","💎",
+    "🎂","🍕","☕","🍺","🍻","🥂","🌟","⭐","⚡","☀️",
+    "✅","❌","⚠️","💅","🗣️","💬","👋","🫣","🫵","🙈",
 ]
 
 # ── Markup helper ────────────────────────────────────────────────────

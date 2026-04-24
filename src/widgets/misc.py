@@ -8,8 +8,8 @@ gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, GdkPixbuf, Gdk
 
-from ..constants import dbg, esc, CACHE_DIR
-from ..helpers import load_image_async
+from ..constants import CACHE_DIR
+from ..helpers import load_image_async, _cache_key
 
 
 class LoadingRow(Adw.ActionRow):
@@ -79,42 +79,53 @@ class ImageAttachment(Gtk.Frame):
     def _on_click(self, gest, n, x, y):
         dialog = Adw.Dialog()
         dialog.set_title("Image")
-        dialog.set_content_width(700)
-        dialog.set_content_height(600)
+        dialog.set_content_width(720)
+        dialog.set_content_height(640)
+        dialog.set_follows_content_size(False)
 
-        tv = Adw.ToolbarView()
-        tv.add_top_bar(Adw.HeaderBar())
+        tv  = Adw.ToolbarView()
+        hdr = Adw.HeaderBar()
+
+        save_btn = Gtk.Button(icon_name="document-save-symbolic")
+        save_btn.set_tooltip_text("Save full-size image")
+        save_btn.add_css_class("flat")
+        save_btn.connect("clicked", self._save_image, dialog)
+        hdr.pack_end(save_btn)
+
+        tv.add_top_bar(hdr)
+
+        # Scrolled container lets the user pan very large images and
+        # makes the dialog behave sensibly on narrow phone screens.
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.set_hexpand(True)
+        scroll.set_kinetic_scrolling(True)
 
         picture = Gtk.Picture()
         picture.set_can_shrink(True)
         picture.set_content_fit(Gtk.ContentFit.CONTAIN)
         picture.set_vexpand(True)
+        picture.set_hexpand(True)
 
-        key = _cache_key(self._url)
-        cached = CACHE_DIR / f"{key}.img"
+        cached = CACHE_DIR / f"{_cache_key(self._url)}.img"
         if cached.exists():
             picture.set_filename(str(cached))
 
-        # Save button
-        save_btn = Gtk.Button(label="Save Image")
-        save_btn.add_css_class("suggested-action")
-        save_btn.set_margin_start(12)
-        save_btn.set_margin_end(12)
-        save_btn.set_margin_bottom(12)
-        save_btn.connect("clicked", self._save_image, dialog)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        box.append(picture)
-        box.append(save_btn)
-
-        tv.set_content(box)
+        scroll.set_child(picture)
+        tv.set_content(scroll)
         dialog.set_child(tv)
         dialog.present(self.parent_window)
 
     def _save_image(self, btn, dialog):
         fd = Gtk.FileDialog()
         fd.set_title("Save Image")
-        fd.set_initial_name("groupme_image.jpg")
+        # Guess an extension from the URL so the default filename is sensible
+        ext = "jpg"
+        for e in ("png", "gif", "webp", "jpeg", "jpg"):
+            if f".{e}" in self._url.lower():
+                ext = "jpeg" if e == "jpg" else e
+                break
+        fd.set_initial_name(f"groupme_image.{ext}")
         fd.save(self.parent_window, None, self._do_save)
 
     def _do_save(self, fd, result):

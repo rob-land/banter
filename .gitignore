@@ -24,3 +24,9 @@ venv/
 .idea/
 *.swp
 *~
+
+# Local debug artifacts
+debug.out
+debug.log
+Screenshot*
+*.flatpak-builder.log

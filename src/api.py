@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.error
 
 from .constants import (
-    GROUPME_API, GROUPME_IMAGE, APP_VERSION, DEBUG, dbg, log
+    GROUPME_API, GROUPME_IMAGE, GROUPME_POWERUPS, APP_VERSION, DEBUG, dbg, log
 )
 
 
@@ -37,8 +37,17 @@ class GroupMeAPI:
         req.add_header("Content-Type", "application/json")
         req.add_header("User-Agent", f"GroupMe-GNOME/{APP_VERSION}")
         req.add_header("X-Access-Token", self.token or "")
+        # Mimic the GroupMe web client. Reverse-engineering its JS bundle
+        # showed X-Requested-With is globally injected on every request;
+        # the reactions endpoint appears to gate non-heart reactions on
+        # a recognized client header value.
+        req.add_header("X-Requested-With", "GroupMeWeb/1.2.3")
         req.method = method
-        body = json.dumps(data).encode() if data is not None else None
+        # ensure_ascii=False → emoji/non-ASCII chars go on the wire as
+        # raw UTF-8 bytes rather than \uXXXX escapes, matching what the
+        # web client sends.
+        body = (json.dumps(data, ensure_ascii=False).encode("utf-8")
+                if data is not None else None)
 
         try:
             with urllib.request.urlopen(req, body, timeout=30) as r:
@@ -203,20 +212,52 @@ class GroupMeAPI:
         return self._ok(r)
 
     def react_message(self, gid, msg_id, code: str):
-        """Add a specific unicode emoji reaction. Falls back to heart like."""
-        # GroupMe community-documented reactions endpoint
-        r = self._req("POST", f"/reactions/{gid}/{msg_id}",
-                      {"reaction": {"type": "unicode", "code": code}})
+        """Add a unicode emoji reaction to a message.
+
+        Verified against the GroupMe web client: POST to the overloaded
+        /like endpoint with a `like_icon` body. The `type`/`code` shape
+        inside like_icon matches the reaction schema used in responses."""
+        r = self._req("POST", f"/messages/{gid}/{msg_id}/like",
+                      {"like_icon": {"type": "unicode", "code": code}})
         if self._ok(r):
             return True
-        # Fallback: use the legacy like endpoint for ❤️
+        # Fallback: plain heart-only /like for resilience
         if code in ("❤️", "♥", "heart"):
             return self.like_message(gid, msg_id)
         return False
 
+    def react_message_pack(self, gid, msg_id, pack_id, pack_index):
+        """Add a GroupMe powerup (pack) emoji reaction.
+
+        Body shape mirrors the received-reaction shape recorded in
+        emoji_reactions.log:
+          {"like_icon":
+            {"type": "emoji", "pack_id": "N", "pack_index": "N"}}
+
+        Returns (ok: bool, error_hint: str|None)."""
+        r = self._req("POST", f"/messages/{gid}/{msg_id}/like", {
+            "like_icon": {
+                "type":       "emoji",
+                "pack_id":    str(pack_id),
+                "pack_index": str(pack_index),
+            },
+        })
+        if self._ok(r):
+            return True, None
+        meta = (r or {}).get("meta", {})
+        errs = meta.get("errors") or []
+        hint = errs[0] if errs else f"HTTP {meta.get('code', '?')}"
+        dbg("react_message_pack: failed pack=%s idx=%s – %s",
+            pack_id, pack_index, hint)
+        return False, hint
+
     def unreact_message(self, gid, msg_id):
-        """Remove the current user's reaction from a message."""
-        r = self._req("DELETE", f"/reactions/{gid}/{msg_id}")
+        """Remove the current user's reaction from a message.
+
+        Web client issues a plain POST to /unlike — no body required.
+        The server uses the caller's user id to figure out which
+        reaction to drop."""
+        r = self._req("POST", f"/messages/{gid}/{msg_id}/unlike")
         if self._ok(r):
             return True
         return self.unlike_message(gid, msg_id)
@@ -225,6 +266,21 @@ class GroupMeAPI:
     def get_contacts(self):
         r = self._req("GET", "/contacts")
         return r.get("response", [])
+
+    # ── blocks ──
+    def block_user(self, me_id, other_user_id):
+        """Block another user. GroupMe's /blocks endpoint takes the
+        users as query parameters rather than JSON body."""
+        r = self._req("POST", "/blocks",
+                      params={"user":      str(me_id),
+                              "otherUser": str(other_user_id)})
+        return self._ok(r)
+
+    def unblock_user(self, me_id, other_user_id):
+        r = self._req("DELETE", "/blocks",
+                      params={"user":      str(me_id),
+                              "otherUser": str(other_user_id)})
+        return self._ok(r)
 
     # ── direct messages ──
     def get_chats(self, page=1, per_page=20):
@@ -311,15 +367,21 @@ class GroupMeAPI:
 
     def create_event(self, gid, name: str, start_at: str,
                      end_at: str = None, location: str = "",
-                     all_day: bool = False):
-        payload = {"event": {"name": name, "start_at": start_at,
-                             "all_day": all_day}}
-        if end_at:
-            payload["event"]["end_at"] = end_at
+                     all_day: bool = False, tz: str = "UTC"):
+        """Create a calendar event. GroupMe requires start_at / end_at /
+        timezone / is_all_day be provided together — end_at defaults to
+        start_at (zero-duration) if the caller didn't supply one."""
+        payload = {
+            "name"       : name,
+            "start_at"   : start_at,
+            "end_at"     : end_at or start_at,
+            "timezone"   : tz,
+            "is_all_day" : bool(all_day),
+        }
         if location:
-            payload["event"]["location"] = {"name": location}
-        r = self._req("POST", f"/conversations/{gid}/events", payload)
-        return r.get("response")
+            payload["location"] = {"name": location}
+        return self._req("POST",
+                         f"/conversations/{gid}/events/create", payload)
 
     def rsvp_event(self, gid, event_id, status):
         """RSVP to an event. status: 'going' or 'not_going'."""
@@ -327,6 +389,39 @@ class GroupMeAPI:
                       f"/conversations/{gid}/events/{event_id}/rsvps",
                       {"rsvp": {"status": status}})
         return self._ok(r)
+
+    def get_event(self, gid, event_id):
+        """Return a single event dict by id, or None if not found."""
+        events = self.get_events(gid) or []
+        for e in events:
+            if str(e.get("event_id") or e.get("id") or "") == str(event_id):
+                return e
+        return None
+
+    # ── Powerups (GroupMe's proprietary emoji packs) ──
+    def get_powerups(self):
+        """Fetch the full GroupMe emoji-pack catalog.
+
+        The endpoint has returned multiple shapes in the wild:
+          • flat list  ................... [ {...}, {...} ]
+          • flat dict  ................... {"powerups": [...]}
+          • wrapped dict  ................ {"meta": ..., "response": {"powerups": [...]}}
+          • wrapped list inside response . {"meta": ..., "response": [...]}
+        Handle all of them, return a list of pack dicts or []."""
+        r = self._req("GET", "/powerups", base=GROUPME_POWERUPS)
+        if r is None:
+            return []
+        if isinstance(r, list):
+            return r
+        if isinstance(r, dict):
+            if isinstance(r.get("powerups"), list):
+                return r["powerups"]
+            resp = r.get("response")
+            if isinstance(resp, list):
+                return resp
+            if isinstance(resp, dict) and isinstance(resp.get("powerups"), list):
+                return resp["powerups"]
+        return []
 
     def get_event_rsvps(self, gid, event_id):
         r = self._req("GET",

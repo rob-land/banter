@@ -250,6 +250,10 @@ class PreferencesDialog(Adw.Dialog):
         self._config.set_pref("bg_poll_interval_secs", bg_secs)
         if self._chat_view:
             self._chat_view.restart_poll()
+        # Apply the new background-poll interval immediately instead of
+        # waiting for app restart.
+        if hasattr(self._parent, "_start_bg_poll"):
+            self._parent._start_bg_poll()
         self._parent.toast(
             f"Poll: {secs}s  •  Background: {bg_secs}s")
         self.close()

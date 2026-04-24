@@ -2,6 +2,7 @@
 
 import threading
 from datetime import datetime
+from pathlib import Path
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -9,8 +10,7 @@ gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gdk, Gio
 
-from ..constants import dbg, esc
-from ..helpers import load_image_async
+from ..constants import dbg
 from ..api import GroupMeAPI
 from .message_bubble import MessageBubble
 from .misc import DateSeparator
@@ -60,6 +60,7 @@ class ChatView(Gtk.Box):
         self._scroll.set_vexpand(True)
         self._scroll.set_policy(Gtk.PolicyType.NEVER,
                                  Gtk.PolicyType.AUTOMATIC)
+        self._scroll.set_kinetic_scrolling(True)
         # Critical: don't let child labels drive the window width wider.
         # With propagate_natural_width=False the ScrolledWindow reports a
         # fixed minimum width, and the viewport clips/wraps child content
@@ -92,7 +93,6 @@ class ChatView(Gtk.Box):
         scroll_overlay.set_child(self._scroll)
         scroll_overlay.add_overlay(self._new_msg_bar)
         scroll_overlay.set_vexpand(True)
-        self.append(scroll_overlay)
 
         # Track scroll position to decide auto-scroll vs. banner
         self._at_bottom = True
@@ -113,7 +113,6 @@ class ChatView(Gtk.Box):
         clear_btn.add_css_class("flat")
         clear_btn.connect("clicked", self._clear_attachment)
         self._preview_bar.append(clear_btn)
-        self.append(self._preview_bar)
 
         # ── Compose bar ──
         compose = Gtk.Box(spacing=8)
@@ -121,7 +120,9 @@ class ChatView(Gtk.Box):
 
         attach_btn = Gtk.Button(icon_name="mail-attachment-symbolic")
         attach_btn.add_css_class("flat")
+        attach_btn.add_css_class("compose-btn")
         attach_btn.set_tooltip_text("Attach image")
+        attach_btn.set_valign(Gtk.Align.END)
         attach_btn.connect("clicked", self._pick_image)
         compose.append(attach_btn)
 
@@ -136,14 +137,18 @@ class ChatView(Gtk.Box):
         entry_scroll.set_child(self._entry)
         entry_scroll.set_policy(Gtk.PolicyType.NEVER,
                                   Gtk.PolicyType.AUTOMATIC)
-        entry_scroll.set_max_content_height(100)
+        entry_scroll.set_min_content_height(44)
+        entry_scroll.set_max_content_height(120)
         entry_scroll.set_propagate_natural_height(True)
         entry_scroll.set_hexpand(True)
+        entry_scroll.set_valign(Gtk.Align.CENTER)
         compose.append(entry_scroll)
 
         send_btn = Gtk.Button(icon_name="mail-send-symbolic")
         send_btn.add_css_class("suggested-action")
+        send_btn.add_css_class("compose-btn")
         send_btn.set_tooltip_text("Send (Enter)")
+        send_btn.set_valign(Gtk.Align.END)
         send_btn.connect("clicked", self._send)
         compose.append(send_btn)
 
@@ -151,7 +156,18 @@ class ChatView(Gtk.Box):
         key_ctrl.connect("key-pressed", self._on_key)
         self._entry.add_controller(key_ctrl)
 
-        self.append(compose)
+        # ── Assemble via Adw.ToolbarView so the compose + preview bars
+        #     sit in bottom-bar slots that the compositor treats as
+        #     keyboard-avoiding safe areas. On Phosh/squeekboard this
+        #     causes the window content to shrink when the OSK opens so
+        #     the compose bar stays visible above the keyboard. ──
+        tv = Adw.ToolbarView()
+        tv.set_vexpand(True)
+        tv.set_content(scroll_overlay)
+        # add_bottom_bar stacks in order added, so preview sits above compose
+        tv.add_bottom_bar(self._preview_bar)
+        tv.add_bottom_bar(compose)
+        self.append(tv)
 
         # ── "Load more" sentinel at top ──
         self._load_more_btn = Gtk.Button(label="↑  Load older messages")
@@ -165,8 +181,16 @@ class ChatView(Gtk.Box):
         self._start_polling()
 
     def restart_poll(self):
-        """Called when the poll interval pref changes (no-op with push)."""
-        pass
+        """Cancel + restart the DM fallback poll with the freshly-saved
+        interval. No-op for group chats (they use the shared push
+        client)."""
+        if not self._is_dm:
+            return
+        if self._poll_id:
+            GLib.source_remove(self._poll_id)
+            self._poll_id = None
+        self._poll_ms = self._read_poll_interval()
+        self._start_polling()
 
     # ── Lifecycle ──
     def stop(self):
@@ -215,8 +239,12 @@ class ChatView(Gtk.Box):
             group_id = str(line.get("group_id") or
                            subject.get("group_id") or
                            subject.get("conversation_id") or "")
-            dbg("push: reaction event msg_id=%s group_id=%s gid=%s in_map=%s",
-                msg_id, group_id, self._gid, msg_id in self._bubble_map)
+            # Log the raw reaction payload so we can see which pack / emoji
+            # the originating client picked — useful for tracking down
+            # packs the /powerups catalog doesn't surface.
+            dbg("push: reaction event msg_id=%s group_id=%s gid=%s in_map=%s user_reaction=%s",
+                msg_id, group_id, self._gid, msg_id in self._bubble_map,
+                subject.get("user_reaction"))
 
             if msg_id and msg_id in self._bubble_map:
                 self._bubble_map[msg_id]._refresh_from_server()

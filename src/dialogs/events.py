@@ -1,7 +1,7 @@
 """Banter — CreateEventDialog, EventsListDialog, EventDetailDialog, CreatePollDialog."""
 
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -31,10 +31,24 @@ def _parse_dt(s):
 
 
 def _fmt_event_time(event):
-    """Return a human-readable date/time string for an event dict."""
-    all_day = event.get("all_day", False)
+    """Return a human-readable date/time string for an event dict.
+    GroupMe emits start_at/end_at in UTC; convert to the user's local
+    time before formatting so the displayed time matches wall-clock."""
+    all_day = event.get("is_all_day", event.get("all_day", False))
     start   = _parse_dt(event.get("start_at", ""))
     end     = _parse_dt(event.get("end_at", ""))
+
+    def _to_local(dt):
+        if dt is None:
+            return None
+        # _parse_dt returns naive datetimes even for "...Z" strings.
+        # Attach UTC then convert.
+        return dt.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+
+    if not all_day:
+        start = _to_local(start)
+        end   = _to_local(end)
+
     if not start:
         return event.get("start_at", "")
     if all_day:
@@ -77,7 +91,7 @@ class CreateEventDialog(Adw.Dialog):
 
         self.set_title("Create Event")
         self.set_content_width(400)
-        self.set_content_height(540)
+        self.set_content_height(640)
 
         tv  = Adw.ToolbarView()
         hdr = Adw.HeaderBar()
@@ -109,23 +123,21 @@ class CreateEventDialog(Adw.Dialog):
         box.append(details_grp)
 
         # ── Date ──
-        date_grp = Adw.PreferencesGroup(title="Date")
+        # A Gtk.Calendar is both more compact (doesn't squeeze the "Date"
+        # label across three lines) and better on a touch screen than
+        # Y/M/D spinners.
+        date_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        date_lbl = Gtk.Label(label="Date", xalign=0)
+        date_lbl.add_css_class("heading")
+        date_section.append(date_lbl)
 
-        self._year_spin  = _spin(2020, 2100, now.year,  width=4)
-        self._month_spin = _spin(1,    12,   now.month, width=2)
-        self._day_spin   = _spin(1,    31,   now.day,   width=2)
+        self._calendar = Gtk.Calendar()
+        self._calendar.add_css_class("card")
+        today = GLib.DateTime.new_local(now.year, now.month, now.day, 0, 0, 0)
+        self._calendar.select_day(today)
+        date_section.append(self._calendar)
 
-        date_row = Adw.ActionRow(title="Date")
-        date_box = Gtk.Box(spacing=4, valign=Gtk.Align.CENTER)
-        date_box.append(self._year_spin)
-        date_box.append(_spin_sep("-"))
-        date_box.append(self._month_spin)
-        date_box.append(_spin_sep("-"))
-        date_box.append(self._day_spin)
-        date_row.add_suffix(date_box)
-        date_grp.add(date_row)
-
-        box.append(date_grp)
+        box.append(date_section)
 
         # ── Time ──
         self._time_grp = Adw.PreferencesGroup(title="Time")
@@ -176,12 +188,18 @@ class CreateEventDialog(Adw.Dialog):
     def _on_end_toggled(self, row, _param):
         self._end_row.set_visible(row.get_active())
 
+    def _selected_date(self):
+        """Return (year, month, day) from the calendar widget."""
+        gdt = self._calendar.get_date()
+        return gdt.get_year(), gdt.get_month(), gdt.get_day_of_month()
+
     def _build_iso(self, h, m):
-        y  = int(self._year_spin.get_value())
-        mo = int(self._month_spin.get_value())
-        d  = int(self._day_spin.get_value())
+        """Combine the calendar-selected date with an H:M local time,
+        converting to UTC ISO ending in 'Z'."""
+        y, mo, d = self._selected_date()
         try:
-            return datetime(y, mo, d, h, m, 0).strftime("%Y-%m-%dT%H:%M:%S")
+            local = datetime(y, mo, d, h, m, 0).astimezone()
+            return local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         except ValueError:
             return None
 
@@ -194,15 +212,13 @@ class CreateEventDialog(Adw.Dialog):
         all_day = self._all_day_row.get_active()
 
         if all_day:
-            y  = int(self._year_spin.get_value())
-            mo = int(self._month_spin.get_value())
-            d  = int(self._day_spin.get_value())
+            y, mo, d = self._selected_date()
             try:
-                start = datetime(y, mo, d).strftime("%Y-%m-%dT00:00:00")
+                start = datetime(y, mo, d).strftime("%Y-%m-%dT00:00:00Z")
+                end   = datetime(y, mo, d, 23, 59, 59).strftime("%Y-%m-%dT%H:%M:%SZ")
             except ValueError:
                 self._parent.toast("Invalid date")
                 return
-            end = None
         else:
             start = self._build_iso(int(self._start_h.get_value()),
                                     int(self._start_m.get_value()))
@@ -228,11 +244,15 @@ class CreateEventDialog(Adw.Dialog):
     def _done(self, r):
         self._btn.set_sensitive(True)
         self._btn.set_label("Create Event")
-        if r:
+        meta = (r or {}).get("meta", {})
+        if meta.get("code") in (200, 201):
             self._parent.toast("Event created!")
             self.close()
-        else:
-            self._parent.toast("Failed to create event")
+            return
+        errs = meta.get("errors") or []
+        code = meta.get("code", "?")
+        msg  = errs[0] if errs else f"HTTP {code}"
+        self._parent.toast(f"Event failed: {msg}")
 
 
 # ─────────────────────────── Events List Dialog ──────────────────
@@ -253,76 +273,124 @@ class EventsListDialog(Adw.Dialog):
         hdr = Adw.HeaderBar()
         tv.add_top_bar(hdr)
 
-        self._stack = Gtk.Stack()
-        self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        # Outer stack: loading spinner vs loaded tabs
+        self._outer_stack = Gtk.Stack()
+        self._outer_stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
 
         spinner = Gtk.Spinner(spinning=True)
         spinner.set_halign(Gtk.Align.CENTER)
         spinner.set_valign(Gtk.Align.CENTER)
-        self._stack.add_named(spinner, "loading")
+        self._outer_stack.add_named(spinner, "loading")
 
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
+        # Tab stack — Upcoming (default) / Past
+        self._tab_stack = Adw.ViewStack()
 
-        self._list_box = Gtk.ListBox()
-        self._list_box.set_selection_mode(Gtk.SelectionMode.NONE)
-        self._list_box.add_css_class("boxed-list")
-        self._list_box.set_margin_start(12)
-        self._list_box.set_margin_end(12)
-        self._list_box.set_margin_top(12)
-        self._list_box.set_margin_bottom(12)
+        self._upcoming_list, up_wrap = self._make_tab_page("No upcoming events")
+        self._past_list,     pa_wrap = self._make_tab_page("No past events")
 
-        self._empty_lbl = Gtk.Label(label="No upcoming events")
-        self._empty_lbl.add_css_class("dim-label")
-        self._empty_lbl.set_halign(Gtk.Align.CENTER)
-        self._empty_lbl.set_valign(Gtk.Align.CENTER)
-        self._empty_lbl.set_margin_top(48)
-        self._empty_lbl.set_visible(False)
+        self._tab_stack.add_titled_with_icon(
+            up_wrap, "upcoming", "Upcoming",
+            "x-office-calendar-symbolic")
+        self._tab_stack.add_titled_with_icon(
+            pa_wrap, "past", "Past",
+            "document-open-recent-symbolic")
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        outer.append(self._list_box)
-        outer.append(self._empty_lbl)
+        switcher = Adw.ViewSwitcherBar()
+        switcher.set_stack(self._tab_stack)
+        switcher.set_reveal(True)
 
-        scroll.set_child(outer)
-        self._stack.add_named(scroll, "list")
+        tabs_body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        tabs_body.append(self._tab_stack)
+        tabs_body.append(switcher)
+        self._outer_stack.add_named(tabs_body, "tabs")
 
-        tv.set_content(self._stack)
+        tv.set_content(self._outer_stack)
         self.set_child(tv)
 
         threading.Thread(target=self._load, daemon=True).start()
+
+    def _make_tab_page(self, empty_msg):
+        """Return (ListBox, scroll-wrapped container) for a tab."""
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_vexpand(True)
+        scroll.set_kinetic_scrolling(True)
+
+        list_box = Gtk.ListBox()
+        list_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        list_box.add_css_class("boxed-list")
+        list_box.set_margin_start(12); list_box.set_margin_end(12)
+        list_box.set_margin_top(12);   list_box.set_margin_bottom(12)
+
+        empty_lbl = Gtk.Label(label=empty_msg)
+        empty_lbl.add_css_class("dim-label")
+        empty_lbl.set_halign(Gtk.Align.CENTER)
+        empty_lbl.set_valign(Gtk.Align.CENTER)
+        empty_lbl.set_margin_top(48)
+        empty_lbl.set_visible(False)
+        list_box._empty_lbl = empty_lbl  # stash for _populate
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        outer.append(list_box)
+        outer.append(empty_lbl)
+        scroll.set_child(outer)
+        return list_box, scroll
 
     def _load(self):
         events = self._api.get_events(self._group["id"])
         GLib.idle_add(self._populate, events)
 
     def _populate(self, events):
-        self._stack.set_visible_child_name("list")
-        if not events:
-            self._empty_lbl.set_visible(True)
-            return
+        self._outer_stack.set_visible_child_name("tabs")
+        events = events or []
 
+        now = datetime.now()
+        upcoming = []
+        past     = []
+        for ev in events:
+            # Use end_at if present, else start_at; treat UTC, compare in local
+            end_raw = ev.get("end_at") or ev.get("start_at")
+            dt = _parse_dt(end_raw)
+            if dt is not None:
+                dt = dt.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+            if dt and dt < now:
+                past.append(ev)
+            else:
+                upcoming.append(ev)
+
+        upcoming.sort(key=lambda e: _parse_dt(e.get("start_at", "")) or datetime.max)
+        past.sort(key=lambda e: _parse_dt(e.get("start_at", "")) or datetime.min,
+                  reverse=True)
+
+        self._fill_tab(self._upcoming_list, upcoming)
+        self._fill_tab(self._past_list,     past)
+
+    def _fill_tab(self, list_box, events):
+        if not events:
+            list_box._empty_lbl.set_visible(True)
+            return
+        list_box._empty_lbl.set_visible(False)
         for ev in events:
             row = Adw.ActionRow()
             row.set_title(esc(ev.get("name", "Event")))
-            row.set_subtitle(esc(_fmt_event_time(ev)))
             row.set_activatable(True)
 
+            subtitle = _fmt_event_time(ev)
             loc = ev.get("location", {})
             if isinstance(loc, dict):
                 loc = loc.get("name", "")
             if loc:
-                row.set_subtitle(esc(_fmt_event_time(ev) + "  •  " + loc))
+                subtitle += "  •  " + loc
+            row.set_subtitle(esc(subtitle))
 
             icon = Gtk.Image.new_from_icon_name("x-office-calendar-symbolic")
             icon.set_pixel_size(20)
             row.add_prefix(icon)
-            row.add_suffix(
-                Gtk.Image.new_from_icon_name("go-next-symbolic"))
+            row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
 
             ev_copy = dict(ev)
             row.connect("activated", lambda _r, e=ev_copy: self._open_event(e))
-            self._list_box.append(row)
+            list_box.append(row)
 
     def _open_event(self, ev):
         EventDetailDialog(self._api, self._group, ev,
@@ -339,7 +407,10 @@ class EventDetailDialog(Adw.Dialog):
         self._event  = event
         self._me_id  = str(me_id)
         self._parent = parent
-        self._ev_id  = event.get("id", "")
+        # GroupMe emits event ids under either `event_id` (list endpoint)
+        # or `id` (detail endpoint) — accept both so RSVP always targets
+        # a real event.
+        self._ev_id  = event.get("event_id") or event.get("id") or ""
 
         self.set_title(esc(event.get("name", "Event")))
         self.set_content_width(400)
@@ -422,14 +493,14 @@ class EventDetailDialog(Adw.Dialog):
 
         btn_box = Gtk.Box(spacing=8, homogeneous=True)
 
-        self._going_btn = Gtk.Button(label="Going")
+        self._going_btn = Gtk.Button(label="I'm in")
         self._going_btn.add_css_class("pill")
         if my_status == "going":
             self._going_btn.add_css_class("suggested-action")
         self._going_btn.connect("clicked", self._rsvp, "going")
         btn_box.append(self._going_btn)
 
-        self._not_going_btn = Gtk.Button(label="Not Going")
+        self._not_going_btn = Gtk.Button(label="Can't go")
         self._not_going_btn.add_css_class("pill")
         if my_status == "not_going":
             self._not_going_btn.add_css_class("destructive-action")
@@ -455,7 +526,7 @@ class EventDetailDialog(Adw.Dialog):
         self._going_btn.set_sensitive(True)
         self._not_going_btn.set_sensitive(True)
         if ok:
-            label = "Going" if status == "going" else "Not Going"
+            label = "I'm in" if status == "going" else "Can't go"
             self._parent.toast(f"RSVP: {label}")
             # Update button styles to reflect new status
             self._going_btn.remove_css_class("suggested-action")

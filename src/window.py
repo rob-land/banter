@@ -6,14 +6,14 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import Gtk, Adw, GLib, Gio, Gdk
+from gi.repository import Gtk, Adw, GLib, Gio, Gdk, Pango
 
 from .constants import APP_NAME, APP_VERSION, DEBUG, dbg, esc
 from .config import Config
 from .api import GroupMeAPI
 from .push import GroupMePush
-from .helpers import set_avatar_from_url
-from .widgets.conversation_row import ConversationRow, GroupRow, DMRow, ContactRow
+from .helpers import set_avatar_from_url, ensure_packs_loaded
+from .widgets.conversation_row import ConversationRow, ContactRow
 from .widgets.chat_view import ChatView
 from .oauth import LoginDialog
 from .dialogs.accounts import AccountsDialog
@@ -33,6 +33,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._current_group= None
         self._chat_view    = None
         self._all_groups   : list = []
+        # Same groups, but fetched WITH full member lists. Populated by
+        # _load_contacts / _populate_contacts_from_groups. Used by the
+        # contact-detail sheet to compute mutual groups.
+        self._all_groups_with_members : list = []
         self._all_dms      : list = []
         self._all_contacts : list = []
         # uid → display name cache, built from contacts + message senders
@@ -51,7 +55,12 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.set_title(APP_NAME)
         self.set_default_size(980, 720)
-        self.set_size_request(360, 600)
+        # Keep a narrow min width so the split view has something to
+        # collapse to, but don't pin a minimum height — on phones with
+        # an on-screen keyboard the visible area shrinks to well under
+        # 600px, and a large min-height would prevent the compositor
+        # from shrinking the window to fit above the keyboard.
+        self.set_size_request(360, 360)
 
         self._toast_overlay = Adw.ToastOverlay()
         self.set_content(self._toast_overlay)
@@ -143,6 +152,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._load_contacts()
         self._start_bg_poll()
         self._start_push()
+        # Warm the emoji-pack catalog so pack reactions and pack emoji
+        # attachments render without a visible delay when first seen.
+        ensure_packs_loaded(self._api)
 
     def get_user_name(self, user_id: str) -> str:
         """Return a display name for a user_id.
@@ -218,24 +230,28 @@ class MainWindow(Adw.ApplicationWindow):
                 row = self._group_rows[gid]
                 current_gid = (str(self._current_group["id"])
                                if self._current_group else None)
-                if gid != current_gid:
-                    row.set_unread(row._unread_count.get_text()
-                                   and int(row._unread_count.get_text() or 0) + 1
-                                   or 1 if row._unread_dot.get_visible() else 1)
-                    # Send a real-time desktop notification via push rather than
-                    # waiting for the bg_poll (which may fire after the user has
-                    # already read the message on another device, making unread=0).
-                    sender = subject.get("name", "Someone")
-                    text   = (subject.get("text") or "📎 attachment").strip()
-                    name   = (self._group_rows[gid].conv or {}).get("name", "GroupMe")
-                    self._send_desktop_notification(
-                        name, f"{sender}: {text}", tag=f"group-{gid}")
-                # Move to top of chats list
+                sender = subject.get("name", "")
+                text   = (subject.get("text") or "").strip()
+
+                # Always move to top, update preview + time — keeps the
+                # sidebar in most-recent order regardless of which chat
+                # is currently open.
                 self._chats_list.remove(row)
                 self._chats_list.insert(row, 0)
                 ts = subject.get("created_at")
                 if ts:
                     row.update_time(ts)
+                row.update_preview(sender, text)
+
+                if gid != current_gid:
+                    row.bump_unread()
+                    # Send a real-time desktop notification via push rather than
+                    # waiting for the bg_poll (which may fire after the user has
+                    # already read the message on another device, making unread=0).
+                    notif_text = text or "📎 attachment"
+                    name = (self._group_rows[gid].conv or {}).get("name", "GroupMe")
+                    self._send_desktop_notification(
+                        name, f"{sender}: {notif_text}", tag=f"group-{gid}")
 
     def _build_sidebar(self):
         sidebar_nav = Adw.NavigationPage(title=APP_NAME)
@@ -294,6 +310,7 @@ class MainWindow(Adw.ApplicationWindow):
         chats_scroll = Gtk.ScrolledWindow()
         chats_scroll.set_vexpand(True)
         chats_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        chats_scroll.set_kinetic_scrolling(True)
         chats_scroll.set_child(self._chats_list)
         chats_page.append(chats_scroll)
         self._stack.add_titled_with_icon(
@@ -313,6 +330,7 @@ class MainWindow(Adw.ApplicationWindow):
         cts_scroll = Gtk.ScrolledWindow()
         cts_scroll.set_vexpand(True)
         cts_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        cts_scroll.set_kinetic_scrolling(True)
         cts_scroll.set_child(self._contacts_list)
         cts_page.append(cts_scroll)
         self._stack.add_titled_with_icon(
@@ -409,8 +427,9 @@ class MainWindow(Adw.ApplicationWindow):
         )
         items.sort(key=lambda x: self._conv_sort_key(x[1], x[0]), reverse=True)
 
+        me_id = (self._current_user or {}).get("id")
         for conv_type, conv in items:
-            row = ConversationRow(conv, conv_type, self._config)
+            row = ConversationRow(conv, conv_type, self._config, me_id=me_id)
             self._chats_list.append(row)
 
             if conv_type == "group":
@@ -452,14 +471,6 @@ class MainWindow(Adw.ApplicationWindow):
             self._open_dm(other, other_id)
         self._split.set_show_content(True)
 
-    def _on_dm_activated(self, lb, row):
-        """Kept for compat — routes to unified handler."""
-        self._on_chats_activated(lb, row)
-
-    def _on_group_activated(self, lb, row):
-        """Kept for compat — routes to unified handler."""
-        self._on_chats_activated(lb, row)
-
     # ── Contacts (populated from group members) ──
     def _load_contacts(self):
         """Fetch group members in the background and populate the contacts tab."""
@@ -475,6 +486,9 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _populate_contacts_from_groups(self, groups):
         """Build the contacts list from all group members across all groups."""
+        # Keep the full-member copy around — the contact detail sheet
+        # needs it to compute mutual groups without a second fetch.
+        self._all_groups_with_members = groups or []
         me_id = str(self._current_user.get("id", "")) if self._current_user else ""
 
         seen: dict = {}   # user_id → contact dict
@@ -531,14 +545,6 @@ class MainWindow(Adw.ApplicationWindow):
             self._contacts_list.append(ContactRow(c))
 
     # ── Selection handlers ──
-    def _on_group_activated(self, lb, row):
-        if not isinstance(row, GroupRow):
-            return
-        self._current_group = row.group
-        row.set_unread(0)   # clears to dimmed "0" rather than hiding
-        self._open_chat(row.group)
-        self._split.set_show_content(True)
-
     def _on_contact_activated(self, lb, row):
         if not isinstance(row, ContactRow):
             return
@@ -563,18 +569,14 @@ class MainWindow(Adw.ApplicationWindow):
         tw.append(av)
         tl = Gtk.Label(label=esc(group.get("name","Group")))
         tl.add_css_class("heading")
+        tl.set_ellipsize(Pango.EllipsizeMode.END)
+        tl.set_max_width_chars(22)
         tw.append(tl)
         hdr.set_title_widget(tw)
 
-        # Members button
-        members_btn = Gtk.Button(icon_name="system-users-symbolic")
-        members_btn.add_css_class("flat")
-        members_btn.set_tooltip_text("Members")
-        members_btn.connect("clicked", self._show_members_panel)
-        hdr.pack_end(members_btn)
-
-        # Group action menu
+        # Group action menu (Members first for easy access on phone)
         grp_menu = Gio.Menu()
+        grp_menu.append("Members",       "win.grp-members")
         grp_menu.append("Gallery",       "win.grp-album")
         grp_menu.append("View Events",   "win.grp-events-view")
         grp_menu.append("Create Event",  "win.grp-event")
@@ -636,6 +638,22 @@ class MainWindow(Adw.ApplicationWindow):
         self._open_dm(user, str(user_id))
         self._split.set_show_content(True)
 
+    # ── Contact detail (Android-style profile sheet) ──
+    def open_contact_detail(self, user: dict, user_id: str):
+        """Open the contact detail dialog showing mutual groups, actions,
+        and block/report menu. Called when a user avatar is tapped."""
+        if not user_id:
+            return
+        me_id = (self._current_user or {}).get("id", "")
+        # Use _all_groups_with_members if loaded; fall back to the
+        # member-less list (mutual detection will simply come back empty
+        # until contact load finishes).
+        groups = self._all_groups_with_members or self._all_groups
+        ContactDetailDialog(
+            self._api, user, str(user_id),
+            groups, me_id, self,
+        ).present(self)
+
     def _open_dm(self, other_user: dict, other_user_id: str):
         """Open a ChatView configured for a direct message thread."""
         self._clear_content()
@@ -651,6 +669,8 @@ class MainWindow(Adw.ApplicationWindow):
         tw.append(av)
         tl = Gtk.Label(label=esc(name))
         tl.add_css_class("heading")
+        tl.set_ellipsize(Pango.EllipsizeMode.END)
+        tl.set_max_width_chars(22)
         tw.append(tl)
         hdr.set_title_widget(tw)
 
@@ -746,15 +766,18 @@ class MainWindow(Adw.ApplicationWindow):
             if last_id and last_id != prev_id:
                 self._last_msg_ids[gid] = last_id
 
-                # Move to top of unified chats list
+                # Move to top of unified chats list + refresh preview/time
                 if gid in self._group_rows:
                     row = self._group_rows[gid]
                     self._chats_list.remove(row)
                     self._chats_list.insert(row, 0)
-                    # Update time label
                     ts = msgs.get("last_message_created_at")
                     if ts:
                         row.update_time(ts)
+                    preview = msgs.get("preview", {}) or {}
+                    row.update_preview(
+                        preview.get("nickname", ""),
+                        preview.get("text") or "")
 
                 if gid != current_gid:
                     if gid in self._group_rows:
@@ -784,14 +807,22 @@ class MainWindow(Adw.ApplicationWindow):
             if last_id and last_id != prev_id:
                 self._last_msg_ids[key] = last_id
 
-                # Move to top of unified chats list
+                # Move to top of unified chats list + refresh preview/time
                 if other_id in self._dm_rows:
                     row = self._dm_rows[other_id]
                     self._chats_list.remove(row)
                     self._chats_list.insert(row, 0)
-                    ts = chat.get("last_message", {}).get("created_at")
+                    lm = chat.get("last_message", {}) or {}
+                    ts = lm.get("created_at")
                     if ts:
                         row.update_time(ts)
+                    sender_id = str(lm.get("sender_id") or lm.get("user_id") or "")
+                    me_id     = str((self._current_user or {}).get("id", ""))
+                    if me_id and sender_id == me_id:
+                        sender = "You"
+                    else:
+                        sender = chat.get("other_user", {}).get("name", "")
+                    row.update_preview(sender, lm.get("text") or "")
 
                 if not is_open and unread > 0:
                     if other_id in self._dm_rows:
@@ -842,7 +873,7 @@ class MainWindow(Adw.ApplicationWindow):
             except Exception:
                 pass
 
-        for name in ("grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
+        for name in ("grp-members", "grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
             _remove_action(name)
 
         def _act(name, cb):
@@ -850,6 +881,7 @@ class MainWindow(Adw.ApplicationWindow):
             a.connect("activate", lambda *_: cb())
             win.add_action(a)
 
+        _act("grp-members",     lambda: self._show_members_panel())
         _act("grp-album",       lambda: GalleryDialog(self._api, group, self).present(self))
         me_id = (self._current_user or {}).get("id", "")
         _act("grp-events-view", lambda: EventsListDialog(self._api, group, me_id, self).present(self))

@@ -33,8 +33,10 @@ widget_sources = files(
   'widgets/__init__.py',
   'widgets/chat_view.py',
   'widgets/conversation_row.py',
+  'widgets/event_card.py',
   'widgets/message_bubble.py',
   'widgets/misc.py',
+  'widgets/reactions_sheet.py',
 )
 
 dialog_sources = files(
