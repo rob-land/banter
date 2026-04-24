@@ -19,6 +19,7 @@ banter_sources = files(
   '__init__.py',
   'application.py',
   'api.py',
+  'async_utils.py',
   'config.py',
   'constants.py',
   'css.py',
