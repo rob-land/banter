@@ -1,6 +1,7 @@
 """Banter — persistent configuration (accounts, preferences, mutes)."""
 
 import json
+import os
 import time
 
 from .constants import CONFIG_DIR
@@ -20,7 +21,15 @@ class Config:
         return {"accounts": [], "active_account": None}
 
     def save(self):
-        self._file.write_text(json.dumps(self._data, indent=2))
+        """Atomically persist to disk.
+
+        Write to a sibling temp file then rename over the real one, so
+        a crash / SIGKILL between open and close can't leave a
+        half-written config.json and lose the user's accounts.
+        os.replace is atomic on POSIX."""
+        tmp = self._file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self._data, indent=2))
+        os.replace(tmp, self._file)
 
     # ── accounts ──
     def add_account(self, token: str, user: dict):
