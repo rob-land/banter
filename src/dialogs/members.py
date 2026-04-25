@@ -1,6 +1,5 @@
 """Banter — MembersDialog."""
 
-import threading
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -9,6 +8,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gdk
 
 from ..constants import esc
+from ..async_utils import run_in_background
 from ..helpers import set_avatar_from_url
 
 
@@ -144,7 +144,7 @@ class MembersDialog(Adw.Dialog):
             else:
                 GLib.idle_add(lambda: self._parent.toast("Failed to add member"))
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _remove_member(self, btn, member):
         def worker():
@@ -153,7 +153,7 @@ class MembersDialog(Adw.Dialog):
             GLib.idle_add(lambda: self._parent.toast(
                 "Removed" if ok else "Failed to remove"))
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
 
 # ─────────────────────────── Group Settings Dialog ───────────────

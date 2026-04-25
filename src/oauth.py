@@ -27,6 +27,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio
 
 from .constants import OAUTH_AUTHORIZE_URL, APP_NAME, APP_VERSION, dbg
+from .async_utils import run_in_background
 from .api import GroupMeAPI
 
 # ── Bundled OAuth credentials ─────────────────────────────────────────
@@ -226,7 +227,7 @@ class LoginDialog(Adw.Dialog):
             ok, result = self._api.verify_token(token)
             GLib.idle_add(self._on_verify_done, ok, result)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_verify_done(self, ok, result):
         self._btn.set_sensitive(True)

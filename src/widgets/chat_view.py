@@ -1,6 +1,5 @@
 """Banter — ChatView: message list + compose bar."""
 
-import threading
 from datetime import datetime
 from pathlib import Path
 import gi
@@ -11,6 +10,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gdk, Gio
 
 from ..constants import dbg
+from ..async_utils import run_in_background
 from ..api import GroupMeAPI
 from .message_bubble import MessageBubble
 from .misc import DateSeparator
@@ -281,7 +281,7 @@ class ChatView(Gtk.Box):
                     gid, after_id=oldest_id, limit=20) if oldest_id else []
             GLib.idle_add(self._on_poll_result, new_msgs, refreshed)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
         return True
 
     def _on_poll_result(self, new_msgs, refreshed):
@@ -305,7 +305,7 @@ class ChatView(Gtk.Box):
                 msgs = self._api.get_messages(self._gid, limit=30)
             GLib.idle_add(self._set_initial, msgs)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _load_more(self, *_):
         if self._loading or not self._oldest_id:
@@ -321,7 +321,7 @@ class ChatView(Gtk.Box):
                     self._gid, before_id=self._oldest_id, limit=20)
             GLib.idle_add(self._prepend_old, msgs)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     # ── Display helpers ──
     @staticmethod
@@ -490,7 +490,7 @@ class ChatView(Gtk.Box):
                 GLib.idle_add(
                     lambda: self._win.toast("Failed to send message"))
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_sent(self, msg):
         self._add_bubble(msg, append=True)
@@ -531,7 +531,7 @@ class ChatView(Gtk.Box):
                 GLib.idle_add(lambda: self._win.toast(
                     "Image upload failed"))
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _set_pending(self, url, name):
         self._pending_img_url = url

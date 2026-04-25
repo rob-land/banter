@@ -1,6 +1,5 @@
 """Banter — GroupDetailDialog, NewGroupDialog, ContactDetailDialog."""
 
-import threading
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -9,6 +8,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio, Gdk
 
 from ..constants import dbg, esc
+from ..async_utils import run_in_background
 from ..helpers import set_avatar_from_url
 
 
@@ -137,7 +137,7 @@ class GroupDetailDialog(Adw.Dialog):
                                         name=name, description=desc)
             GLib.idle_add(lambda: self._parent.toast(
                 "Group updated" if r else "Update failed"))
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _copy_invite(self, *_):
         url = self._group.get("share_url","")
@@ -162,7 +162,7 @@ class GroupDetailDialog(Adw.Dialog):
         def worker():
             ok = self._api.destroy_group(self._group["id"])
             GLib.idle_add(self._after_delete, ok)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _after_delete(self, ok):
         self._parent.toast("Group deleted" if ok else "Delete failed")
@@ -182,7 +182,7 @@ class GroupDetailDialog(Adw.Dialog):
         def worker():
             ok = self._api.remove_member(self._group["id"], mid)
             GLib.idle_add(self._after_leave, ok)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _after_leave(self, ok):
         self._parent.toast("Left group" if ok else "Failed")
@@ -196,7 +196,7 @@ class GroupDetailDialog(Adw.Dialog):
                 self._group["id"], member.get("id"))
             GLib.idle_add(lambda: self._parent.toast(
                 "Member removed" if ok else "Failed"))
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
 
 class NewGroupDialog(Adw.Dialog):
@@ -251,7 +251,7 @@ class NewGroupDialog(Adw.Dialog):
         def worker():
             r = self._api.create_group(name, desc, share)
             GLib.idle_add(self._on_created, r)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_created(self, r):
         self._create_btn.set_sensitive(True)
@@ -447,7 +447,7 @@ class ContactDetailDialog(Adw.Dialog):
         def worker():
             ok = self._api.block_user(me, uid)
             GLib.idle_add(self._on_block_done, ok)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_block_done(self, ok):
         if ok:
@@ -558,7 +558,7 @@ class AddToGroupDialog(Adw.Dialog):
             r = self._api.add_members(gid, members)
             ok = r is not None
             GLib.idle_add(self._on_add_done, ok, group.get("name", "group"))
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_add_done(self, ok, group_name):
         if ok:

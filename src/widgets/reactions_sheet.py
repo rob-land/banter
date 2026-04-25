@@ -27,7 +27,6 @@ Layout (top → bottom):
 Picking any emoji toggles / replaces the user's reaction on the message.
 """
 
-import threading
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -35,6 +34,7 @@ gi.require_version('Gdk', '4.0')
 from gi.repository import Gtk, Adw, GLib
 
 from ..constants import DEFAULT_REACTIONS, esc
+from ..async_utils import run_in_background
 from ..helpers import get_all_packs, set_pack_emoji, load_image_async, pack_info
 
 
@@ -345,7 +345,7 @@ class ReactionsSheet(Adw.Dialog):
                 GLib.idle_add(self._after_apply)
             else:
                 GLib.idle_add(self._flash_react_failed, label, hint)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
         self.close()
 

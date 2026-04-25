@@ -1,7 +1,6 @@
 """Banter — MessageBubble widget with inline reactions."""
 
 import re
-import threading
 from datetime import datetime
 import gi
 gi.require_version('Gtk', '4.0')
@@ -11,6 +10,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gdk, Pango
 
 from ..constants import DEBUG, esc, EMOJI_LOG
+from ..async_utils import run_in_background
 from ..api import GroupMeAPI
 from ..helpers import set_avatar_from_url, set_pack_emoji
 from .misc import ImageAttachment
@@ -161,7 +161,7 @@ class MessageBubble(Gtk.Box):
                     parent = next(
                         (m for m in msgs if str(m.get("id")) == pid), None)
                     GLib.idle_add(self._set_quote, parent)
-                threading.Thread(target=_fetch_parent, daemon=True).start()
+                run_in_background(_fetch_parent)
 
         text = (msg.get("text") or "").strip()
 
@@ -543,7 +543,7 @@ class MessageBubble(Gtk.Box):
                 if str(m.get("id")) == str(mid):
                     GLib.idle_add(self.refresh, m)
                     return
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def refresh(self, updated_msg: dict):
         """Update reactions in-place from a freshly-fetched server message."""

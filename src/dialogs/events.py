@@ -1,6 +1,5 @@
 """Banter — CreateEventDialog, EventsListDialog, EventDetailDialog, CreatePollDialog."""
 
-import threading
 from datetime import datetime, timezone
 import gi
 gi.require_version('Gtk', '4.0')
@@ -8,6 +7,7 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib
 
 from ..constants import dbg, esc
+from ..async_utils import run_in_background
 
 
 # ─────────────────────────── Date/time helpers ───────────────────
@@ -239,7 +239,7 @@ class CreateEventDialog(Adw.Dialog):
             r = self._api.create_event(
                 self._group["id"], name, start, end, loc, all_day)
             GLib.idle_add(self._done, r)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _done(self, r):
         self._btn.set_sensitive(True)
@@ -307,7 +307,7 @@ class EventsListDialog(Adw.Dialog):
         tv.set_content(self._outer_stack)
         self.set_child(tv)
 
-        threading.Thread(target=self._load, daemon=True).start()
+        run_in_background(self._load)
 
     def _make_tab_page(self, empty_msg):
         """Return (ListBox, scroll-wrapped container) for a tab."""
@@ -520,7 +520,7 @@ class EventDetailDialog(Adw.Dialog):
         def worker():
             ok = self._api.rsvp_event(self._group["id"], self._ev_id, status)
             GLib.idle_add(self._on_rsvp_done, ok, status)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_rsvp_done(self, ok, status):
         self._going_btn.set_sensitive(True)
@@ -621,7 +621,7 @@ class CreatePollDialog(Adw.Dialog):
             r = self._api.create_poll(
                 self._group["id"], subject, options, expiry_secs, multi)
             GLib.idle_add(self._done, r)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _done(self, r):
         self._btn.set_sensitive(True)

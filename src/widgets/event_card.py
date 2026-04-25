@@ -1,6 +1,5 @@
 """Banter — EventCard: inline calendar event preview inside a message bubble."""
 
-import threading
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -8,6 +7,7 @@ gi.require_version('Gdk', '4.0')
 from gi.repository import Gtk, Adw, GLib, Gdk, Pango
 
 from ..constants import esc
+from ..async_utils import run_in_background
 from ..dialogs.events import _fmt_event_time, EventDetailDialog
 
 
@@ -111,7 +111,7 @@ class EventCard(Gtk.Box):
         def worker():
             ev = self._api.get_event(gid, eid)
             GLib.idle_add(self._on_fetched, ev)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_fetched(self, ev):
         if ev:
@@ -160,7 +160,7 @@ class EventCard(Gtk.Box):
         def worker():
             ok = self._api.rsvp_event(gid, eid, status)
             GLib.idle_add(self._on_rsvp_done, ok, status)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_rsvp_done(self, ok, status):
         self._in_btn.set_sensitive(True)

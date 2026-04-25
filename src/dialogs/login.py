@@ -1,6 +1,5 @@
 """Banter — LoginDialog (OAuth flow)."""
 
-import threading
 from datetime import datetime
 import gi
 gi.require_version('Gtk', '4.0')
@@ -10,6 +9,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio, Gdk, GdkPixbuf
 
 from ..constants import dbg, esc, CACHE_DIR
+from ..async_utils import run_in_background
 from ..api import GroupMeAPI
 from ..helpers import set_avatar_from_url, load_image_async, _cache_key
 
@@ -178,7 +178,7 @@ class LoginDialog(Adw.Dialog):
             ok, result = self._api.verify_token(token)
             GLib.idle_add(self._on_verify_done, ok, result)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _on_verify_done(self, ok, result):
         self._btn.set_sensitive(True)

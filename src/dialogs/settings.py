@@ -1,6 +1,5 @@
 """Banter — GroupSettingsDialog and PreferencesDialog."""
 
-import threading
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -9,6 +8,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio
 
 from ..constants import dbg, esc
+from ..async_utils import run_in_background
 
 
 class GroupSettingsDialog(Adw.Dialog):
@@ -127,7 +127,7 @@ class GroupSettingsDialog(Adw.Dialog):
             r = self._api.update_group(self._group["id"], name=name, description=desc)
             GLib.idle_add(lambda: self._parent.toast(
                 "Saved" if r else "Save failed"))
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _copy_invite(self, *_):
         url = self._group.get("share_url","")
@@ -166,7 +166,7 @@ class GroupSettingsDialog(Adw.Dialog):
         def worker():
             ok = self._api.destroy_group(self._group["id"])
             GLib.idle_add(self._after_delete, ok)
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _after_delete(self, ok):
         self._parent.toast("Group deleted" if ok else "Delete failed")
@@ -186,7 +186,7 @@ class GroupSettingsDialog(Adw.Dialog):
                 ok and self.close(),
                 ok and self._parent.refresh_groups()
             ))
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
 
 # ─────────────────────────── Preferences Dialog ──────────────────

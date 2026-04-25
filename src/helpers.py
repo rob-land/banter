@@ -12,6 +12,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, GdkPixbuf
 
 from .constants import CACHE_DIR, APP_VERSION, dbg
+from .async_utils import run_in_background
 
 from pathlib import Path
 
@@ -48,7 +49,7 @@ def load_image_async(url: str, callback, avatar: bool = False):
             dbg("img-cache: hit %s", path.name)
         GLib.idle_add(callback, str(path))
 
-    threading.Thread(target=worker, daemon=True).start()
+    run_in_background(worker)
 
 
 def set_avatar_from_url(avatar_widget: Adw.Avatar, url: str):
@@ -186,7 +187,7 @@ def ensure_packs_loaded(api, callback=None):
             return False
         GLib.idle_add(_flush)
 
-    threading.Thread(target=worker, daemon=True).start()
+    run_in_background(worker)
 
 
 def get_pack(pack_id) -> dict | None:
@@ -324,7 +325,7 @@ def set_pack_emoji(image_widget: Gtk.Image, pack_id, offset,
             return
         GLib.idle_add(lambda: image_widget.set_from_file(str(cell_cache)) or False)
 
-    threading.Thread(target=worker, daemon=True).start()
+    run_in_background(worker)
     return True
 
 

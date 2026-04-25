@@ -1,6 +1,5 @@
 """Banter — GalleryDialog (group image gallery)."""
 
-import threading
 import shutil
 from datetime import datetime
 import gi
@@ -11,6 +10,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio, Gdk, GdkPixbuf
 
 from ..constants import dbg, esc, CACHE_DIR
+from ..async_utils import run_in_background
 from ..helpers import load_image_async, _cache_key
 
 
@@ -105,7 +105,7 @@ class GalleryDialog(Adw.Dialog):
                 limit=self.PAGE_SIZE)
             GLib.idle_add(self._on_page, msgs)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _load_more(self, *_):
         self._load_page(before=self._oldest_ts)
@@ -293,7 +293,7 @@ class GalleryDialog(Adw.Dialog):
                 self._group["id"], "", [{"type": "image", "url": img_url}])
             GLib.idle_add(self._after_upload, msg)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _after_upload(self, msg):
         if msg:

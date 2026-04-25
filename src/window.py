@@ -1,6 +1,5 @@
 """Banter — MainWindow: the application's primary window."""
 
-import threading
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -9,6 +8,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio, Gdk, Pango
 
 from .constants import APP_NAME, APP_VERSION, DEBUG, dbg, esc
+from .async_utils import run_in_background
 from .config import Config
 from .api import GroupMeAPI
 from .push import GroupMePush
@@ -79,7 +79,7 @@ class MainWindow(Adw.ApplicationWindow):
                 else:
                     GLib.idle_add(self._go_login)
 
-            threading.Thread(target=verify, daemon=True).start()
+            run_in_background(verify)
         else:
             self._go_login()
 
@@ -386,7 +386,7 @@ class MainWindow(Adw.ApplicationWindow):
             chats  = self._api.get_chats_all()
             GLib.idle_add(self._display_chats, groups, chats)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     # Keep refresh_groups as an alias for code that calls it (e.g. after deleting a group)
     def refresh_groups(self):
@@ -482,7 +482,7 @@ class MainWindow(Adw.ApplicationWindow):
             groups_with_members = self._api.get_groups_all_with_members()
             GLib.idle_add(self._populate_contacts_from_groups, groups_with_members)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _populate_contacts_from_groups(self, groups):
         """Build the contacts list from all group members across all groups."""
@@ -616,7 +616,7 @@ class MainWindow(Adw.ApplicationWindow):
             if g:
                 GLib.idle_add(self._open_group_detail, g)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _open_group_detail(self, group):
         GroupDetailDialog(
@@ -746,7 +746,7 @@ class MainWindow(Adw.ApplicationWindow):
             chats  = self._api.get_chats_all()
             GLib.idle_add(self._process_bg_update, groups, chats)
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
         return True   # keep timer alive
 
     def _process_bg_update(self, groups, chats):
@@ -1020,7 +1020,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self._config, self
             ).present(self))
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _show_members_panel(self, *_):
         if not self._current_group:
@@ -1034,7 +1034,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self
             ).present(self))
 
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_background(worker)
 
     def _open_preferences(self, *_):
         PreferencesDialog(self._config, self, self._chat_view).present(self)
@@ -1082,7 +1082,7 @@ class MainWindow(Adw.ApplicationWindow):
                 if me:
                     GLib.idle_add(self._reload_for_user, me)
 
-            threading.Thread(target=reload, daemon=True).start()
+            run_in_background(reload)
 
         AccountsDialog(self._config, self, on_switch).present(self)
 
