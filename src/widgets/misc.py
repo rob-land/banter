@@ -10,6 +10,7 @@ from gi.repository import Gtk, Adw, GLib, GdkPixbuf, Gdk
 
 from ..constants import CACHE_DIR
 from ..helpers import load_image_async, _cache_key
+from .base import StandardDialog
 
 
 class LoadingRow(Adw.ActionRow):
@@ -77,22 +78,14 @@ class ImageAttachment(Gtk.Frame):
         self._stack.set_visible_child_name("error")
 
     def _on_click(self, gest, n, x, y):
-        dialog = Adw.Dialog()
-        dialog.set_title("Image")
-        dialog.set_content_width(720)
-        dialog.set_content_height(640)
+        dialog = StandardDialog(title="Image", width=720, height=640)
         dialog.set_follows_content_size(False)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
 
         save_btn = Gtk.Button(icon_name="document-save-symbolic")
         save_btn.set_tooltip_text("Save full-size image")
         save_btn.add_css_class("flat")
         save_btn.connect("clicked", self._save_image, dialog)
-        hdr.pack_end(save_btn)
-
-        tv.add_top_bar(hdr)
+        dialog.add_header_widget(save_btn, end=True)
 
         # Scrolled container lets the user pan very large images and
         # makes the dialog behave sensibly on narrow phone screens.
@@ -112,8 +105,7 @@ class ImageAttachment(Gtk.Frame):
             picture.set_filename(str(cached))
 
         scroll.set_child(picture)
-        tv.set_content(scroll)
-        dialog.set_child(tv)
+        dialog.set_body(scroll)
         dialog.present(self.parent_window)
 
     def _save_image(self, btn, dialog):

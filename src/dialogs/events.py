@@ -8,6 +8,7 @@ from gi.repository import Gtk, Adw, GLib
 
 from ..constants import dbg, esc
 from ..async_utils import run_in_background
+from ..widgets.base import StandardDialog
 
 
 # ─────────────────────────── Date/time helpers ───────────────────
@@ -82,28 +83,14 @@ def _spin_sep(char):
 
 # ─────────────────────────── Create Event Dialog ─────────────────
 
-class CreateEventDialog(Adw.Dialog):
+class CreateEventDialog(StandardDialog):
     def __init__(self, api, group, parent):
-        super().__init__()
+        super().__init__(title="Create Event", width=400, height=640)
         self._api    = api
         self._group  = group
         self._parent = parent
 
-        self.set_title("Create Event")
-        self.set_content_width(400)
-        self.set_content_height(640)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(16); box.set_margin_end(16)
-        box.set_margin_top(16);   box.set_margin_bottom(16)
+        box = self.set_scrolled_body(margin=16, spacing=16)
 
         now = datetime.now()
 
@@ -177,10 +164,6 @@ class CreateEventDialog(Adw.Dialog):
         self._btn.add_css_class("pill")
         self._btn.connect("clicked", self._create)
         box.append(self._btn)
-
-        scroll.set_child(box)
-        tv.set_content(scroll)
-        self.set_child(tv)
 
     def _on_all_day_toggled(self, row, _param):
         self._time_grp.set_visible(not row.get_active())
@@ -257,21 +240,13 @@ class CreateEventDialog(Adw.Dialog):
 
 # ─────────────────────────── Events List Dialog ──────────────────
 
-class EventsListDialog(Adw.Dialog):
+class EventsListDialog(StandardDialog):
     def __init__(self, api, group, me_id, parent):
-        super().__init__()
+        super().__init__(title="Events", width=420, height=560)
         self._api    = api
         self._group  = group
         self._me_id  = str(me_id)
         self._parent = parent
-
-        self.set_title("Events")
-        self.set_content_width(420)
-        self.set_content_height(560)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
 
         # Outer stack: loading spinner vs loaded tabs
         self._outer_stack = Gtk.Stack()
@@ -304,8 +279,7 @@ class EventsListDialog(Adw.Dialog):
         tabs_body.append(switcher)
         self._outer_stack.add_named(tabs_body, "tabs")
 
-        tv.set_content(self._outer_stack)
-        self.set_child(tv)
+        self.set_body(self._outer_stack)
 
         run_in_background(self._load)
 
@@ -399,9 +373,10 @@ class EventsListDialog(Adw.Dialog):
 
 # ─────────────────────────── Event Detail Dialog ─────────────────
 
-class EventDetailDialog(Adw.Dialog):
+class EventDetailDialog(StandardDialog):
     def __init__(self, api, group, event, me_id, parent):
-        super().__init__()
+        super().__init__(title=esc(event.get("name", "Event")),
+                         width=400, height=540)
         self._api    = api
         self._group  = group
         self._event  = event
@@ -412,21 +387,7 @@ class EventDetailDialog(Adw.Dialog):
         # a real event.
         self._ev_id  = event.get("event_id") or event.get("id") or ""
 
-        self.set_title(esc(event.get("name", "Event")))
-        self.set_content_width(400)
-        self.set_content_height(540)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(16); box.set_margin_end(16)
-        box.set_margin_top(16);   box.set_margin_bottom(16)
+        box = self.set_scrolled_body(margin=16, spacing=16)
 
         # ── Title ──
         title_lbl = Gtk.Label(label=esc(event.get("name", "Event")))
@@ -509,10 +470,6 @@ class EventDetailDialog(Adw.Dialog):
 
         box.append(btn_box)
 
-        scroll.set_child(box)
-        tv.set_content(scroll)
-        self.set_child(tv)
-
     def _rsvp(self, _btn, status):
         self._going_btn.set_sensitive(False)
         self._not_going_btn.set_sensitive(False)
@@ -541,29 +498,15 @@ class EventDetailDialog(Adw.Dialog):
 
 # ─────────────────────────── Create Poll Dialog ──────────────────
 
-class CreatePollDialog(Adw.Dialog):
+class CreatePollDialog(StandardDialog):
     def __init__(self, api, group, parent):
-        super().__init__()
+        super().__init__(title="Add Poll", width=400, height=560)
         self._api    = api
         self._group  = group
         self._parent = parent
         self._option_rows = []
 
-        self.set_title("Add Poll")
-        self.set_content_width(400)
-        self.set_content_height(560)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(16); box.set_margin_end(16)
-        box.set_margin_top(16);   box.set_margin_bottom(16)
+        box = self.set_scrolled_body(margin=16, spacing=16)
 
         q_grp = Adw.PreferencesGroup(title="Question")
         self._subject = Adw.EntryRow(title="Question *")
@@ -595,10 +538,6 @@ class CreatePollDialog(Adw.Dialog):
         self._btn.add_css_class("pill")
         self._btn.connect("clicked", self._create)
         box.append(self._btn)
-
-        scroll.set_child(box)
-        tv.set_content(scroll)
-        self.set_child(tv)
 
     def _add_option(self):
         n   = len(self._option_rows) + 1

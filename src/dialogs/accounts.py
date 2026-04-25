@@ -10,37 +10,26 @@ from gi.repository import Gtk, Adw, GLib
 from ..constants import esc
 from ..config import Config
 from ..helpers import set_avatar_from_url
+from ..widgets.base import StandardDialog
 
 
-class AccountsDialog(Adw.Dialog):
+class AccountsDialog(StandardDialog):
     def __init__(self, config: Config, parent, on_switch):
-        super().__init__()
+        super().__init__(title="Accounts", width=400, height=-1)
         self._config    = config
         self._parent    = parent
         self._on_switch = on_switch
 
-        self.set_title("Accounts")
-        self.set_content_width(400)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_start(12); box.set_margin_end(12)
-        box.set_margin_top(12);   box.set_margin_bottom(12)
+        body = self.set_scrolled_body(margin=12, spacing=12)
 
         self._accs_grp = Adw.PreferencesGroup(title="Signed-in Accounts")
-        box.append(self._accs_grp)
+        body.append(self._accs_grp)
 
         add_btn = Gtk.Button(label="Add Account")
         add_btn.add_css_class("suggested-action")
         add_btn.add_css_class("pill")
         add_btn.connect("clicked", self._add_account)
-        box.append(add_btn)
-
-        tv.set_content(box)
-        self.set_child(tv)
+        body.append(add_btn)
 
         self._refresh_list()
 

@@ -8,10 +8,11 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio
 
 from ..constants import dbg, esc
+from ..widgets.base import StandardDialog
 from ..async_utils import run_in_background
 
 
-class GroupSettingsDialog(Adw.Dialog):
+class GroupSettingsDialog(StandardDialog):
     MUTE_OPTIONS = [
         ("1 hour",     3600),
         ("8 hours",    28800),
@@ -22,7 +23,7 @@ class GroupSettingsDialog(Adw.Dialog):
     ]
 
     def __init__(self, api, group, me_id, config, parent):
-        super().__init__()
+        super().__init__(title="Group Settings", width=420, height=640)
         self._api    = api
         self._group  = group
         self._me     = str(me_id)
@@ -32,21 +33,7 @@ class GroupSettingsDialog(Adw.Dialog):
         self._is_owner = (creator == self._me)
         gid          = str(group["id"])
 
-        self.set_title("Group Settings")
-        self.set_content_width(420)
-        self.set_content_height(640)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(12); box.set_margin_end(12)
-        box.set_margin_top(12);   box.set_margin_bottom(12)
+        box = self.set_scrolled_body(margin=12, spacing=16)
 
         # ── Group info edit (owner only) ──
         if self._is_owner:
@@ -115,10 +102,6 @@ class GroupSettingsDialog(Adw.Dialog):
             leave_row.connect("activated", self._leave_group)
             admin_grp.add(leave_row)
         box.append(admin_grp)
-
-        scroll.set_child(box)
-        tv.set_content(scroll)
-        self.set_child(tv)
 
     def _save_info(self, *_):
         name = self._name_row.get_text().strip()
@@ -191,23 +174,14 @@ class GroupSettingsDialog(Adw.Dialog):
 
 # ─────────────────────────── Preferences Dialog ──────────────────
 
-class PreferencesDialog(Adw.Dialog):
+class PreferencesDialog(StandardDialog):
     def __init__(self, config, parent, chat_view=None):
-        super().__init__()
+        super().__init__(title="Preferences", width=400, height=-1)
         self._config    = config
         self._parent    = parent
         self._chat_view = chat_view
 
-        self.set_title("Preferences")
-        self.set_content_width(400)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(12); box.set_margin_end(12)
-        box.set_margin_top(12);   box.set_margin_bottom(12)
+        box = self.set_scrolled_body(margin=12, spacing=16)
 
         # ── Chat polling ──
         poll_grp = Adw.PreferencesGroup(
@@ -239,9 +213,6 @@ class PreferencesDialog(Adw.Dialog):
         save_btn.add_css_class("pill")
         save_btn.connect("clicked", self._save)
         box.append(save_btn)
-
-        tv.set_content(box)
-        self.set_child(tv)
 
     def _save(self, *_):
         secs    = int(self._poll_spin.get_value())

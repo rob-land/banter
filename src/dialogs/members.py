@@ -10,11 +10,13 @@ from gi.repository import Gtk, Adw, GLib, Gdk
 from ..constants import esc
 from ..async_utils import run_in_background
 from ..helpers import set_avatar_from_url
+from ..widgets.base import StandardDialog
 
 
-class MembersDialog(Adw.Dialog):
+class MembersDialog(StandardDialog):
     def __init__(self, api, group, me_id, parent):
-        super().__init__()
+        super().__init__(title=f"Members – {group.get('name','')}",
+                         width=400, height=600)
         self._api    = api
         self._group  = group
         self._me     = str(me_id)
@@ -22,21 +24,7 @@ class MembersDialog(Adw.Dialog):
         creator      = str(group.get("creator_user_id",""))
         self._is_owner = (creator == self._me)
 
-        self.set_title(f"Members – {group.get('name','')}")
-        self.set_content_width(400)
-        self.set_content_height(600)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_start(12); box.set_margin_end(12)
-        box.set_margin_top(12);   box.set_margin_bottom(12)
+        body = self.set_scrolled_body(margin=12, spacing=12)
 
         # ── Add member (owner only) ──
         if self._is_owner:
@@ -48,18 +36,14 @@ class MembersDialog(Adw.Dialog):
             add_btn.add_css_class("pill")
             add_btn.set_margin_top(6)
             add_btn.connect("clicked", self._add_member)
-            box.append(add_grp)
-            box.append(add_btn)
+            body.append(add_grp)
+            body.append(add_btn)
 
         # ── Member list ──
         self._members_grp = Adw.PreferencesGroup(
             title=f"Members ({len(group.get('members', []))})")
-        box.append(self._members_grp)
+        body.append(self._members_grp)
         self._populate()
-
-        scroll.set_child(box)
-        tv.set_content(scroll)
-        self.set_child(tv)
 
     def _populate(self):
         # Clear existing rows

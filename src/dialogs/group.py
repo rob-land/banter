@@ -10,31 +10,19 @@ from gi.repository import Gtk, Adw, GLib, Gio, Gdk
 from ..constants import dbg, esc
 from ..async_utils import run_in_background
 from ..helpers import set_avatar_from_url
+from ..widgets.base import StandardDialog
 
 
-class GroupDetailDialog(Adw.Dialog):
+class GroupDetailDialog(StandardDialog):
     def __init__(self, api, group, me_id, parent):
-        super().__init__()
+        super().__init__(title=group.get("name", "Group Details"),
+                         width=420, height=680)
         self._api    = api
         self._group  = group
         self._me     = str(me_id)
         self._parent = parent
 
-        self.set_title(group.get("name", "Group Details"))
-        self.set_content_width(420)
-        self.set_content_height(680)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(12); box.set_margin_end(12)
-        box.set_margin_top(12);   box.set_margin_bottom(12)
+        box = self.set_scrolled_body(margin=12, spacing=16)
 
         # ── Group avatar ──
         av = Adw.Avatar(size=80, text=esc(group.get("name","G")),
@@ -96,10 +84,6 @@ class GroupDetailDialog(Adw.Dialog):
             acts.add(leave_row)
 
         box.append(acts)
-
-        scroll.set_child(box)
-        tv.set_content(scroll)
-        self.set_child(tv)
 
     def _load_members(self):
         members = self._group.get("members", [])
@@ -199,22 +183,13 @@ class GroupDetailDialog(Adw.Dialog):
         run_in_background(worker)
 
 
-class NewGroupDialog(Adw.Dialog):
+class NewGroupDialog(StandardDialog):
     def __init__(self, api, parent):
-        super().__init__()
+        super().__init__(title="New Group", width=380, height=-1)
         self._api    = api
         self._parent = parent
 
-        self.set_title("New Group")
-        self.set_content_width(380)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(16); box.set_margin_end(16)
-        box.set_margin_top(16);   box.set_margin_bottom(16)
+        box = self.set_scrolled_body(margin=16, spacing=16)
 
         grp = Adw.PreferencesGroup(title="Group Details")
         self._name = Adw.EntryRow(title="Group Name *")
@@ -233,9 +208,6 @@ class NewGroupDialog(Adw.Dialog):
         self._create_btn.add_css_class("pill")
         self._create_btn.connect("clicked", self._create)
         box.append(self._create_btn)
-
-        tv.set_content(box)
-        self.set_child(tv)
 
     def _create(self, *_):
         name = self._name.get_text().strip()
@@ -264,7 +236,7 @@ class NewGroupDialog(Adw.Dialog):
             self._parent.toast("Failed to create group")
 
 
-class ContactDetailDialog(Adw.Dialog):
+class ContactDetailDialog(StandardDialog):
     """Android-style contact sheet: avatar, mutual groups, actions, menu.
 
     Modelled after the official GroupMe Android profile screen:
@@ -276,20 +248,13 @@ class ContactDetailDialog(Adw.Dialog):
 
     def __init__(self, api, user: dict, user_id: str, all_groups: list,
                  me_id: str, parent):
-        super().__init__()
+        name = user.get("name") or user.get("nickname") or "Contact"
+        super().__init__(title=name, width=420, height=580)
         self._api     = api
         self._user    = user
         self._uid     = str(user_id)
         self._me      = str(me_id)
         self._parent  = parent
-
-        name = user.get("name") or user.get("nickname") or "Contact"
-        self.set_title(name)
-        self.set_content_width(420)
-        self.set_content_height(580)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
 
         # Overflow menu (Block / Report) — scoped to this dialog only
         # via a dialog-local action group so it doesn't leak into the
@@ -309,19 +274,9 @@ class ContactDetailDialog(Adw.Dialog):
         menu_btn = Gtk.MenuButton(icon_name="view-more-symbolic")
         menu_btn.set_tooltip_text("More")
         menu_btn.set_menu_model(menu)
-        hdr.pack_end(menu_btn)
+        self.add_header_widget(menu_btn, end=True)
 
-        tv.add_top_bar(hdr)
-
-        # Scrollable content
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-        scroll.set_kinetic_scrolling(True)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(16); box.set_margin_end(16)
-        box.set_margin_top(16);   box.set_margin_bottom(20)
+        box = self.set_scrolled_body(margin=16, spacing=16)
 
         # Large avatar
         av = Adw.Avatar(size=96, text=esc(name), show_initials=True)
@@ -403,10 +358,6 @@ class ContactDetailDialog(Adw.Dialog):
             empty.set_margin_top(12)
             box.append(empty)
 
-        scroll.set_child(box)
-        tv.set_content(scroll)
-        self.set_child(tv)
-
     # ── Actions ──────────────────────────────────────────────────────
     def _open_dm(self, *_):
         self.close()
@@ -468,35 +419,20 @@ class ContactDetailDialog(Adw.Dialog):
                 "To report, visit groupme.com/help")
 
 
-class AddToGroupDialog(Adw.Dialog):
+class AddToGroupDialog(StandardDialog):
     """Pick a group to add this user to."""
 
     def __init__(self, api, user: dict, user_id: str,
                  all_groups: list, me_id: str, parent):
-        super().__init__()
+        name = user.get("name") or "Contact"
+        super().__init__(title=f"Add {name}", width=400, height=520)
         self._api    = api
         self._user   = user
         self._uid    = str(user_id)
         self._me     = str(me_id)
         self._parent = parent
 
-        name = user.get("name") or "Contact"
-        self.set_title(f"Add {name}")
-        self.set_content_width(400)
-        self.set_content_height(520)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-        scroll.set_kinetic_scrolling(True)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_start(12); box.set_margin_end(12)
-        box.set_margin_top(12);   box.set_margin_bottom(16)
+        box = self.set_scrolled_body(margin=12, spacing=12)
 
         # Only offer groups where the user is NOT already a member
         candidates = []
@@ -542,10 +478,6 @@ class AddToGroupDialog(Adw.Dialog):
                 list_box.append(row)
 
             box.append(list_box)
-
-        scroll.set_child(box)
-        tv.set_content(scroll)
-        self.set_child(tv)
 
     def _add_to(self, group):
         gid  = str(group["id"])

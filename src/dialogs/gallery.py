@@ -12,9 +12,10 @@ from gi.repository import Gtk, Adw, GLib, Gio, Gdk, GdkPixbuf
 from ..constants import dbg, esc, CACHE_DIR
 from ..async_utils import run_in_background
 from ..helpers import load_image_async, _cache_key
+from ..widgets.base import StandardDialog
 
 
-class GalleryDialog(Adw.Dialog):
+class GalleryDialog(StandardDialog):
     """Browse all images sent in a group (the real GroupMe gallery API).
 
     GroupMe has no concept of separate albums via its public API.
@@ -26,7 +27,8 @@ class GalleryDialog(Adw.Dialog):
     THUMB_SIZE = 120
 
     def __init__(self, api, group, parent):
-        super().__init__()
+        super().__init__(title=f"Gallery – {group.get('name','')}",
+                         width=520, height=660)
         self._api        = api
         self._group      = group
         self._parent     = parent
@@ -35,14 +37,6 @@ class GalleryDialog(Adw.Dialog):
         self._loading    = False
         self._exhausted  = False
 
-        self.set_title(f"Gallery – {group.get('name','')}")
-        self.set_content_width(520)
-        self.set_content_height(660)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
         # Upload button in header
@@ -50,7 +44,7 @@ class GalleryDialog(Adw.Dialog):
         up_btn.add_css_class("flat")
         up_btn.set_tooltip_text("Upload photo to group")
         up_btn.connect("clicked", self._pick_photo)
-        hdr.pack_end(up_btn)
+        self.add_header_widget(up_btn, end=True)
 
         # Spinner bar
         self._spinner = Gtk.Spinner(spinning=True, margin_top=40,
@@ -85,8 +79,7 @@ class GalleryDialog(Adw.Dialog):
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll.set_vexpand(True)
         scroll.set_child(outer)
-        tv.set_content(scroll)
-        self.set_child(tv)
+        self.set_body(scroll)
 
         self._load_page()
 
@@ -199,22 +192,17 @@ class GalleryDialog(Adw.Dialog):
 
     # ── Full-size viewer ──
     def _view_photo(self, url: str, msg: dict):
-        viewer = Adw.Dialog()
         sender = msg.get("name", "")
         ts     = msg.get("created_at", 0)
         dt     = datetime.fromtimestamp(ts).strftime("%-d %b %Y, %-I:%M %p") if ts else ""
-        viewer.set_title(f"{sender}  {dt}".strip())
-        viewer.set_content_width(720)
-        viewer.set_content_height(640)
 
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
+        viewer = StandardDialog(title=f"{sender}  {dt}".strip(),
+                                width=720, height=640)
 
         save_btn = Gtk.Button(label="Save")
         save_btn.add_css_class("suggested-action")
         save_btn.connect("clicked", lambda *_: self._save_photo(url, viewer))
-        hdr.pack_end(save_btn)
-        tv.add_top_bar(hdr)
+        viewer.add_header_widget(save_btn, end=True)
 
         picture = Gtk.Picture()
         picture.set_can_shrink(True)
@@ -238,8 +226,7 @@ class GalleryDialog(Adw.Dialog):
                     pass
 
         load_image_async(url, on_loaded)
-        tv.set_content(stack)
-        viewer.set_child(tv)
+        viewer.set_body(stack)
         viewer.present(self._parent)
 
     def _save_photo(self, url: str, viewer):

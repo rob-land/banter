@@ -12,8 +12,9 @@ from ..constants import dbg, esc, CACHE_DIR
 from ..async_utils import run_in_background
 from ..api import GroupMeAPI
 from ..helpers import set_avatar_from_url, load_image_async, _cache_key
+from ..widgets.base import StandardDialog
 
-class LoginDialog(Adw.Dialog):
+class LoginDialog(StandardDialog):
     """
     GroupMe sign-in via OAuth 2.0 implicit flow.
 
@@ -28,20 +29,11 @@ class LoginDialog(Adw.Dialog):
     """
 
     def __init__(self, parent, on_login):
-        super().__init__()
+        super().__init__(title="Sign In to GroupMe", width=440, height=520)
         self._parent   = parent
         self._on_login = on_login
         self._api      = GroupMeAPI()
         self._server   = None
-
-        self.set_title("Sign In to GroupMe")
-        self.set_content_width(440)
-        self.set_content_height(520)
-
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        hdr.set_show_back_button(False)
-        tv.add_top_bar(hdr)
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         outer.set_valign(Gtk.Align.CENTER)
@@ -127,8 +119,7 @@ class LoginDialog(Adw.Dialog):
         kc.connect("key-pressed", self._on_key)
         self._client_id_row.add_controller(kc)
 
-        tv.set_content(outer)
-        self.set_child(tv)
+        self.set_body(outer)
         dbg("LoginDialog: opened (OAuth flow)")
 
     def _on_key(self, ctrl, keyval, *_):

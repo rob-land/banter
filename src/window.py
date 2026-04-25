@@ -13,6 +13,7 @@ from .config import Config
 from .api import GroupMeAPI
 from .push import GroupMePush
 from .helpers import set_avatar_from_url, ensure_packs_loaded
+from .widgets.base import StandardDialog
 from .widgets.conversation_row import ConversationRow, ContactRow
 from .widgets.chat_view import ChatView
 from .oauth import LoginDialog
@@ -897,17 +898,9 @@ class MainWindow(Adw.ApplicationWindow):
             self.toast("This group has no share link")
             return
 
-        dlg = Adw.Dialog()
-        dlg.set_title("Share Group")
-        dlg.set_content_width(360)
+        dlg = StandardDialog(title="Share Group", width=360, height=-1)
 
-        tv  = Adw.ToolbarView()
-        hdr = Adw.HeaderBar()
-        tv.add_top_bar(hdr)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.set_margin_start(20); box.set_margin_end(20)
-        box.set_margin_top(16);   box.set_margin_bottom(20)
+        box = dlg.set_scrolled_body(margin=20, spacing=16)
 
         # Group name
         name_lbl = Gtk.Label(label=esc(group.get("name", "Group")))
@@ -964,8 +957,6 @@ class MainWindow(Adw.ApplicationWindow):
         except Exception as e:
             dbg("QR generation failed: %s", e)
 
-        tv.set_content(box)
-        dlg.set_child(tv)
         dlg.present(self)
 
     def _make_qr_widget(self, url: str):
