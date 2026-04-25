@@ -32,6 +32,7 @@ banter_sources = files(
 
 widget_sources = files(
   'widgets/__init__.py',
+  'widgets/base.py',
   'widgets/chat_view.py',
   'widgets/conversation_row.py',
   'widgets/event_card.py',
