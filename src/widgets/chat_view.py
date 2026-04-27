@@ -247,7 +247,7 @@ class ChatView(Gtk.Box):
                 subject.get("user_reaction"))
 
             if msg_id and msg_id in self._bubble_map:
-                self._bubble_map[msg_id]._refresh_from_server()
+                self._bubble_map[msg_id].refresh_from_server()()
             elif msg_id and line and (group_id == self._gid or not group_id):
                 # We have the full message in the push payload — use it directly
                 # rather than making an extra API call

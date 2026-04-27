@@ -47,10 +47,10 @@ class ReactionsSheet(Adw.Dialog):
     def __init__(self, bubble, reaction_map: dict):
         super().__init__()
         self._bubble       = bubble
-        self._api          = bubble._api
-        self._gid          = bubble._gid
-        self._msg_id       = bubble._msg["id"]
-        self._me           = bubble._me
+        self._api          = bubble.api
+        self._gid          = bubble.gid
+        self._msg_id       = bubble.msg["id"]
+        self._me           = bubble.me
         self._reaction_map = reaction_map
 
         # The user's current reaction key, or None.
@@ -204,7 +204,7 @@ class ReactionsSheet(Adw.Dialog):
         list_box.set_selection_mode(Gtk.SelectionMode.NONE)
         list_box.add_css_class("boxed-list")
 
-        win = self._bubble._win
+        win = self._bubble.win
         for _, info in self._reaction_map.items():
             uids  = info["uids"]
             count = len(uids)
@@ -229,7 +229,7 @@ class ReactionsSheet(Adw.Dialog):
                 if uid == self._me:
                     names.append("You")
                 else:
-                    name = win.get_user_name(uid) if hasattr(win, "get_user_name") else uid
+                    name = win.get_user_name(uid)
                     names.append(name)
             row.set_subtitle(esc(", ".join(sorted(names))))
             row.set_subtitle_lines(3)
@@ -350,14 +350,11 @@ class ReactionsSheet(Adw.Dialog):
         self.close()
 
     def _after_apply(self):
-        if hasattr(self._bubble, "_refresh_from_server"):
-            self._bubble._refresh_from_server()
+        self._bubble.refresh_from_server()
 
     def _flash_react_failed(self, label, hint=None):
-        win = self._bubble._win
-        if hasattr(win, "toast"):
-            msg = f"GroupMe rejected {label}"
-            if hint:
-                msg += f" — {hint}"
-            win.toast(msg)
+        msg = f"GroupMe rejected {label}"
+        if hint:
+            msg += f" — {hint}"
+        self._bubble.win.toast(msg)
         self._after_apply()

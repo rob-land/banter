@@ -52,17 +52,17 @@ class MessageBubble(Gtk.Box):
     def __init__(self, msg: dict, me_id, group_id: str,
                  api: GroupMeAPI, window):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        self._msg  = msg
-        self._gid  = group_id
-        self._api  = api
-        self._win  = window
-        self._me   = str(me_id)
-        is_mine    = str(msg.get("user_id", "")) == self._me
+        self.msg  = msg
+        self.gid  = group_id
+        self.api  = api
+        self.win  = window
+        self.me   = str(me_id)
+        is_mine    = str(msg.get("user_id", "")) == self.me
 
         # Cache this sender's name so reaction tooltips can resolve it
         uid  = str(msg.get("user_id", ""))
         name = msg.get("name", "")
-        if uid and name and hasattr(window, "cache_sender_name"):
+        if uid and name:
             window.cache_sender_name(uid, name)
 
         # ── Sender header (others only) ──
@@ -360,7 +360,7 @@ class MessageBubble(Gtk.Box):
                 if DEBUG:
                     try:
                         with open(EMOJI_LOG, "a") as f:
-                            f.write(f"{datetime.now().isoformat()}  msg={self._msg.get('id')}  {r}\n")
+                            f.write(f"{datetime.now().isoformat()}  msg={self.msg.get('id')}  {r}\n")
                     except Exception:
                         pass
             else:
@@ -381,7 +381,7 @@ class MessageBubble(Gtk.Box):
             uids = set(str(u) for u in favorited_by)
             reaction_map["❤️"] = {"uids": uids, "raw_code": "❤️", "is_pack": False}
 
-        me = self._me
+        me = self.me
 
         # Reaction pills
         for _, info in reaction_map.items():
@@ -425,7 +425,7 @@ class MessageBubble(Gtk.Box):
         try:
             from .reactions_sheet import ReactionsSheet
             sheet = ReactionsSheet(self, reaction_map)
-            sheet.present(self._win)
+            sheet.present(self.win)
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
@@ -435,8 +435,7 @@ class MessageBubble(Gtk.Box):
             print("=== ReactionsSheet failed ===", file=sys.stderr)
             print(tb, file=sys.stderr)
             print("=============================", file=sys.stderr)
-            if hasattr(self._win, "toast"):
-                self._win.toast(f"Reactions unavailable: {e}")
+            self.win.toast(f"Reactions unavailable: {e}")
 
     def _build_pack_emoji_row(self, text: str, placeholder: str, charmap: list):
         """Build an inline text+image layout for a message carrying a
@@ -533,12 +532,12 @@ class MessageBubble(Gtk.Box):
         btn.set_tooltip_text("Add reaction")
         return btn
 
-    def _refresh_from_server(self):
+    def refresh_from_server(self):
         """Re-fetch this single message from the API and re-render reactions."""
-        gid = self._gid
-        mid = self._msg["id"]
+        gid = self.gid
+        mid = self.msg["id"]
         def worker():
-            msgs = self._api.get_messages(gid, before_id=str(int(mid) + 1), limit=1)
+            msgs = self.api.get_messages(gid, before_id=str(int(mid) + 1), limit=1)
             for m in msgs:
                 if str(m.get("id")) == str(mid):
                     GLib.idle_add(self.refresh, m)
@@ -547,7 +546,7 @@ class MessageBubble(Gtk.Box):
 
     def refresh(self, updated_msg: dict):
         """Update reactions in-place from a freshly-fetched server message."""
-        self._msg = updated_msg
+        self.msg = updated_msg
         self._render_reactions(
             updated_msg.get("reactions", []),
             updated_msg.get("favorited_by", [])

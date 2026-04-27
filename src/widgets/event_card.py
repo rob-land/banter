@@ -26,12 +26,12 @@ class EventCard(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.add_css_class("event-card")
 
-        self._api      = api
-        self._gid      = str(gid)
-        self._me       = str(me_id)
+        self.api      = api
+        self.gid      = str(gid)
+        self.me       = str(me_id)
         self._event_id = str(event_id) if event_id else ""
         self._event    = event_data if isinstance(event_data, dict) else None
-        self._win      = window
+        self.win      = window
 
         # ── Header row: icon + title ──
         hdr = Gtk.Box(spacing=8)
@@ -106,10 +106,10 @@ class EventCard(Gtk.Box):
 
     # ── Fetch ──
     def _fetch(self):
-        gid, eid = self._gid, self._event_id
+        gid, eid = self.gid, self._event_id
 
         def worker():
-            ev = self._api.get_event(gid, eid)
+            ev = self.api.get_event(gid, eid)
             GLib.idle_add(self._on_fetched, ev)
         run_in_background(worker)
 
@@ -142,9 +142,9 @@ class EventCard(Gtk.Box):
         not_going = [str(u) for u in ev.get("not_going", [])]
         self._in_btn.remove_css_class("suggested-action")
         self._out_btn.remove_css_class("destructive-action")
-        if self._me in going:
+        if self.me in going:
             self._in_btn.add_css_class("suggested-action")
-        elif self._me in not_going:
+        elif self.me in not_going:
             self._out_btn.add_css_class("destructive-action")
 
     # ── RSVP ──
@@ -154,11 +154,11 @@ class EventCard(Gtk.Box):
         self._in_btn.set_sensitive(False)
         self._out_btn.set_sensitive(False)
 
-        gid, eid = self._gid, self._event_id
-        me = self._me
+        gid, eid = self.gid, self._event_id
+        me = self.me
 
         def worker():
-            ok = self._api.rsvp_event(gid, eid, status)
+            ok = self.api.rsvp_event(gid, eid, status)
             GLib.idle_add(self._on_rsvp_done, ok, status)
         run_in_background(worker)
 
@@ -166,15 +166,14 @@ class EventCard(Gtk.Box):
         self._in_btn.set_sensitive(True)
         self._out_btn.set_sensitive(True)
         if not ok:
-            if hasattr(self._win, "toast"):
-                self._win.toast("RSVP failed")
+            self.win.toast("RSVP failed")
             return
 
         # Optimistically update local state + highlight
         ev = self._event or {}
         going     = [str(u) for u in ev.get("going", [])]
         not_going = [str(u) for u in ev.get("not_going", [])]
-        me = self._me
+        me = self.me
         going     = [u for u in going     if u != me]
         not_going = [u for u in not_going if u != me]
         if status == "going":
@@ -186,13 +185,12 @@ class EventCard(Gtk.Box):
         self._event = ev
         self._render()
 
-        if hasattr(self._win, "toast"):
-            self._win.toast("RSVP: " + ("I'm in" if status == "going" else "Can't go"))
+        self.win.toast("RSVP: " + ("I'm in" if status == "going" else "Can't go"))
 
     # ── Click card → open full details ──
     def _on_card_click(self, _gest, _n, _x, _y):
         if not self._event:
             return
         EventDetailDialog(
-            self._api, {"id": self._gid}, dict(self._event),
-            self._me, self._win).present(self._win)
+            self.api, {"id": self.gid}, dict(self._event),
+            self.me, self.win).present(self.win)
