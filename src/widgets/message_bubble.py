@@ -49,6 +49,14 @@ def _linkify(text: str) -> tuple:
 
 
 class MessageBubble(Gtk.Box):
+    # Layout tunables — class-level so a future style pass can adjust
+    # them in one place rather than chasing literals through the file.
+    MAX_TEXT_CHARS  = 45    # main message body + location label wrap width
+    MAX_NAME_CHARS  = 28    # sender header + reply-quote sender ellipsize cap
+    MAX_QUOTE_CHARS = 40    # reply quote text wrap width
+    MAX_QUOTE_LEN   = 120   # reply quote text truncated character count
+    MIN_BUBBLE_GAP  = 32    # px — minimum spacer width opposite the bubble
+
     def __init__(self, msg: dict, me_id, group_id: str,
                  api: GroupMeAPI, window):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3)
@@ -79,7 +87,7 @@ class MessageBubble(Gtk.Box):
             nm.add_css_class("bold-name")
             nm.set_halign(Gtk.Align.START)
             nm.set_ellipsize(Pango.EllipsizeMode.END)
-            nm.set_max_width_chars(28)
+            nm.set_max_width_chars(self.MAX_NAME_CHARS)
             hdr.append(nm)
 
             ts  = msg.get("created_at", 0)
@@ -124,7 +132,7 @@ class MessageBubble(Gtk.Box):
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         # 32 px minimum gap so bubble never runs edge-to-edge
-        spacer.set_size_request(32, -1)
+        spacer.set_size_request(self.MIN_BUBBLE_GAP, -1)
 
         bubble = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         bubble.add_css_class("msg-bubble")
@@ -187,7 +195,7 @@ class MessageBubble(Gtk.Box):
             lbl = Gtk.Label(wrap=True)
             lbl.set_xalign(0)
             lbl.set_selectable(True)
-            lbl.set_max_width_chars(45)
+            lbl.set_max_width_chars(self.MAX_TEXT_CHARS)
             # WORD_CHAR wrapping lets long URLs/unbreakable tokens break
             # mid-string instead of forcing the label to demand the full
             # content width. This is what prevents the "header disappears"
@@ -215,7 +223,7 @@ class MessageBubble(Gtk.Box):
                           f"\n{att.get('lat')}, {att.get('lng')}")
                 loc.set_wrap(True)
                 loc.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-                loc.set_max_width_chars(45)
+                loc.set_max_width_chars(self.MAX_TEXT_CHARS)
                 loc.set_xalign(0)
                 bubble.append(loc)
             elif kind == "split":
@@ -292,7 +300,7 @@ class MessageBubble(Gtk.Box):
         name_lbl.add_css_class("reply-quote-name")
         name_lbl.set_xalign(0)
         name_lbl.set_ellipsize(Pango.EllipsizeMode.END)
-        name_lbl.set_max_width_chars(28)
+        name_lbl.set_max_width_chars(self.MAX_NAME_CHARS)
         self._quote_box.append(name_lbl)
 
         # Message preview (first 120 chars)
@@ -307,14 +315,14 @@ class MessageBubble(Gtk.Box):
             else:
                 parent_text = "…"
 
-        MAX_LEN = 120
-        preview = parent_text[:MAX_LEN] + ("…" if len(parent_text) > MAX_LEN else "")
+        preview = (parent_text[:self.MAX_QUOTE_LEN] +
+                   ("…" if len(parent_text) > self.MAX_QUOTE_LEN else ""))
         text_lbl = Gtk.Label(label=preview)
         text_lbl.add_css_class("reply-quote-text")
         text_lbl.set_xalign(0)
         text_lbl.set_wrap(True)
         text_lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-        text_lbl.set_max_width_chars(40)
+        text_lbl.set_max_width_chars(self.MAX_QUOTE_CHARS)
         self._quote_box.append(text_lbl)
 
     # ── Reactions ──

@@ -725,10 +725,7 @@ class MainWindow(Adw.ApplicationWindow):
                 child.set_visible(not q or q in n or q in p or q in e)
             child = child.get_next_sibling()
 
-    # ── Actions ──
     # ── Background poll (all groups/DMs — for notifications & badges) ──
-    BG_POLL_INTERVAL = 30_000   # ms — check every 30 s
-
     def _start_bg_poll(self):
         if self._bg_poll_id:
             GLib.source_remove(self._bg_poll_id)
