@@ -44,13 +44,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._name_cache   : dict = {}
         # Unified chats list (groups + DMs merged, sorted by recency)
         self._all_chats    : list = []
-        # Maps conv_id → ConversationRow for live badge/time updates
-        self._conv_rows    : dict = {}
-        # Keep separate maps for bg-poll compat
-        self._group_rows   : dict = {}
-        self._dm_rows      : dict = {}
-        # Last known message id per conversation (for change detection)
-        self._last_msg_ids : dict = {}
+        # Conversation rows + last-seen message ids, keyed by a uniform
+        # (conv_type, id) tuple. Use _conv_key() to construct keys; never
+        # mix string and tuple keys here.
+        self._rows         : dict = {}   # tuple → ConversationRow
+        self._last_msg_ids : dict = {}   # tuple → last message id seen
         self._bg_poll_id   = None
         self._push         = None   # singleton GroupMePush for the whole session
 
@@ -83,6 +81,14 @@ class MainWindow(Adw.ApplicationWindow):
             run_in_background(verify)
         else:
             self._go_login()
+
+    # ── Conversation key helper ──
+    @staticmethod
+    def _conv_key(conv_type: str, conv_id) -> tuple:
+        """Build the tuple key used by _rows and _last_msg_ids for a
+        given conversation. conv_type is 'group' or 'dm'; conv_id is
+        the group id (for groups) or the OTHER user's id (for DMs)."""
+        return (conv_type, str(conv_id))
 
     # ── Toast helper ──
     def toast(self, msg: str):
@@ -227,8 +233,9 @@ class MainWindow(Adw.ApplicationWindow):
         # Also keep the sidebar unread counts fresh on new messages
         if ev_type == "line.create":
             gid = str(subject.get("group_id", ""))
-            if gid and gid in self._group_rows:
-                row = self._group_rows[gid]
+            key = self._conv_key("group", gid)
+            row = self._rows.get(key)
+            if gid and row is not None:
                 current_gid = (str(self._current_group["id"])
                                if self._current_group else None)
                 sender = subject.get("name", "")
@@ -250,7 +257,7 @@ class MainWindow(Adw.ApplicationWindow):
                     # waiting for the bg_poll (which may fire after the user has
                     # already read the message on another device, making unread=0).
                     notif_text = text or "📎 attachment"
-                    name = (self._group_rows[gid].conv or {}).get("name", "GroupMe")
+                    name = (row.conv or {}).get("name", "GroupMe")
                     self._send_desktop_notification(
                         name, f"{sender}: {notif_text}", tag=f"group-{gid}")
 
@@ -410,9 +417,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._chats_spinner.set_visible(False)
         self._all_groups = groups
         self._all_dms    = chats
-        self._group_rows = {}
-        self._dm_rows    = {}
-        self._conv_rows  = {}
+        self._rows       = {}
 
         # Clear existing rows
         child = self._chats_list.get_first_child()
@@ -435,17 +440,16 @@ class MainWindow(Adw.ApplicationWindow):
 
             if conv_type == "group":
                 gid = str(conv["id"])
-                self._group_rows[gid] = row
-                self._conv_rows[gid]  = row
+                self._rows[self._conv_key("group", gid)] = row
                 self._last_msg_ids.setdefault(
-                    gid, conv.get("messages", {}).get("last_message_id"))
+                    self._conv_key("group", gid),
+                    conv.get("messages", {}).get("last_message_id"))
             else:
                 other_id = str(conv.get("other_user", {}).get("id", ""))
                 if other_id:
-                    self._dm_rows[other_id]        = row
-                    self._conv_rows[f"dm_{other_id}"] = row
+                    self._rows[self._conv_key("dm", other_id)] = row
                     self._last_msg_ids.setdefault(
-                        f"dm_{other_id}",
+                        self._conv_key("dm", other_id),
                         conv.get("last_message", {}).get("id"))
 
         # Update tab attention dot
@@ -758,18 +762,19 @@ class MainWindow(Adw.ApplicationWindow):
         # ── Groups ──
         for g in groups:
             gid      = str(g["id"])
+            key      = self._conv_key("group", gid)
+            row      = self._rows.get(key)
             msgs     = g.get("messages", {})
             last_id  = msgs.get("last_message_id")
             unread   = int(msgs.get("unread_count") or 0)
-            prev_id  = self._last_msg_ids.get(gid)
+            prev_id  = self._last_msg_ids.get(key)
             total_unread += unread
 
             if last_id and last_id != prev_id:
-                self._last_msg_ids[gid] = last_id
+                self._last_msg_ids[key] = last_id
 
                 # Move to top of unified chats list + refresh preview/time
-                if gid in self._group_rows:
-                    row = self._group_rows[gid]
+                if row is not None:
                     self._chats_list.remove(row)
                     self._chats_list.insert(row, 0)
                     ts = msgs.get("last_message_created_at")
@@ -781,8 +786,8 @@ class MainWindow(Adw.ApplicationWindow):
                         preview.get("text") or "")
 
                 if gid != current_gid:
-                    if gid in self._group_rows:
-                        self._group_rows[gid].set_unread(unread)
+                    if row is not None:
+                        row.set_unread(unread)
                     if unread > 0:
                         preview = msgs.get("preview", {})
                         sender  = preview.get("nickname", "Someone")
@@ -790,13 +795,14 @@ class MainWindow(Adw.ApplicationWindow):
                         name    = g.get("name", "GroupMe")
                         self._send_desktop_notification(
                             name, f"{sender}: {text}", tag=f"group-{gid}")
-            elif gid in self._group_rows:
-                self._group_rows[gid].set_unread(unread)
+            elif row is not None:
+                row.set_unread(unread)
 
         # ── DMs ──
         for chat in chats:
             other_id = str(chat.get("other_user", {}).get("id", ""))
-            key      = f"dm_{other_id}"
+            key      = self._conv_key("dm", other_id)
+            row      = self._rows.get(key)
             last_id  = chat.get("last_message", {}).get("id")
             unread   = int(chat.get("unread_count") or 0)
             prev_id  = self._last_msg_ids.get(key)
@@ -809,8 +815,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self._last_msg_ids[key] = last_id
 
                 # Move to top of unified chats list + refresh preview/time
-                if other_id in self._dm_rows:
-                    row = self._dm_rows[other_id]
+                if row is not None:
                     self._chats_list.remove(row)
                     self._chats_list.insert(row, 0)
                     lm = chat.get("last_message", {}) or {}
@@ -826,15 +831,15 @@ class MainWindow(Adw.ApplicationWindow):
                     row.update_preview(sender, lm.get("text") or "")
 
                 if not is_open and unread > 0:
-                    if other_id in self._dm_rows:
-                        self._dm_rows[other_id].set_unread(unread)
+                    if row is not None:
+                        row.set_unread(unread)
                     other_name = chat.get("other_user", {}).get("name", "Someone")
                     last_text  = (chat.get("last_message", {})
                                       .get("text") or "📎 attachment").strip()
                     self._send_desktop_notification(
                         other_name, last_text, tag=f"dm-{other_id}")
-            elif other_id in self._dm_rows:
-                self._dm_rows[other_id].set_unread(unread)
+            elif row is not None:
+                row.set_unread(unread)
 
         # Update tab attention dot
         if hasattr(self, '_chats_page'):
@@ -1053,9 +1058,6 @@ class MainWindow(Adw.ApplicationWindow):
         self._api          = None
         self._current_user = None
         self._last_msg_ids = {}
-        self._group_rows   = {}
-        self._dm_rows      = {}
-        self._conv_rows    = {}
         self._stop_push()
         self._show_placeholder()
         self._go_login()
@@ -1080,9 +1082,6 @@ class MainWindow(Adw.ApplicationWindow):
     def _reload_for_user(self, user):
         self._current_user = user
         self._last_msg_ids = {}
-        self._group_rows   = {}
-        self._dm_rows      = {}
-        self._conv_rows    = {}
         self._stop_push()
         self._show_placeholder()
         self.refresh_chats()
