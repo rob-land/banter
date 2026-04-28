@@ -42,6 +42,11 @@ class ChatView(Gtk.Box):
         self._poll_id    = None
         # Maps message id → MessageBubble widget for in-place refresh
         self._bubble_map : dict = {}
+        # Tick-callback machinery for the scroll-to-bottom pinner —
+        # see _scroll_bottom for why a single set_value isn't enough.
+        self._pin_tick_id     = 0
+        self._pin_frames_left = 0
+        self._pin_last_upper  = -1.0
         # "Jump to bottom" / "new message" tracking. While the user is
         # scrolled up, _first_unread_id holds the id of the oldest
         # message that arrived since they scrolled away — clicking the
@@ -224,6 +229,9 @@ class ChatView(Gtk.Box):
         if self._poll_id:
             GLib.source_remove(self._poll_id)
             self._poll_id = None
+        if self._pin_tick_id != 0:
+            self.remove_tick_callback(self._pin_tick_id)
+            self._pin_tick_id = 0
 
     def _start_polling(self):
         """Groups use the MainWindow-level push client.
@@ -273,7 +281,7 @@ class ChatView(Gtk.Box):
                 subject.get("user_reaction"))
 
             if msg_id and msg_id in self._bubble_map:
-                self._bubble_map[msg_id].refresh_from_server()()
+                self._bubble_map[msg_id].refresh_from_server()
             elif msg_id and line and (group_id == self._gid or not group_id):
                 # We have the full message in the push payload — use it directly
                 # rather than making an extra API call
@@ -480,6 +488,11 @@ class ChatView(Gtk.Box):
 
     def _on_scroll_changed(self, adj):
         """Track whether the user is at the bottom of the message list."""
+        # While the pin tick is forcibly keeping us at the bottom across
+        # layout passes, ignore intermediate positions — they're
+        # measurement artefacts, not user scrolls.
+        if self._pin_tick_id != 0:
+            return
         at_bottom = adj.get_value() >= (adj.get_upper() - adj.get_page_size() - 40)
         self._at_bottom = at_bottom
         if at_bottom:
@@ -541,13 +554,51 @@ class ChatView(Gtk.Box):
         GLib.idle_add(_do_scroll)
 
     def _scroll_bottom(self):
-        """Scroll to the bottom of the message list.
-        Deferred one frame so GTK has laid out any newly-appended widgets."""
-        def _do_scroll():
-            adj = self._scroll.get_vadjustment()
-            adj.set_value(adj.get_upper())
+        """Pin the scroll position to the bottom across the next several
+        layout passes.
+
+        A single ``adj.set_value(adj.get_upper())`` is unreliable because
+        GTK4's measure machinery does width-for-height incrementally:
+        wrapping labels finish their height calculation only after the
+        viewport's allocated width is known, which can be a frame or
+        two AFTER we set value. By the time the last bubble's reaction
+        row is fully measured, ``upper`` has grown but our scroll value
+        is stuck at the old (smaller) bottom, leaving the last message
+        partially clipped.
+
+        Instead, we install a tick callback that re-pins each frame
+        until ``upper`` has been stable for two consecutive frames
+        (with a hard cap of ~1 s so we never loop forever)."""
+        self._at_bottom = True
+        self._pin_frames_left = 60        # ~1s @ 60 Hz, then give up
+        self._pin_last_upper  = -1.0
+        if self._pin_tick_id == 0:
+            self._pin_tick_id = self.add_tick_callback(self._pin_tick)
+
+    def _pin_tick(self, _widget, _frame_clock):
+        adj = self._scroll.get_vadjustment()
+        upper = adj.get_upper()
+
+        # If the user actively scrolled away during the pin window,
+        # abandon — their scroll wins.
+        if not self._at_bottom and self._pin_last_upper >= 0:
+            self._pin_tick_id = 0
+            return False  # GLib.SOURCE_REMOVE
+
+        self._pin_frames_left -= 1
+        if self._pin_frames_left <= 0:
+            self._pin_tick_id = 0
             return False
-        GLib.idle_add(_do_scroll)
+
+        # Stop once `upper` has been steady for two consecutive frames —
+        # that means measurement has settled.
+        if upper == self._pin_last_upper:
+            self._pin_tick_id = 0
+            return False
+        self._pin_last_upper = upper
+
+        adj.set_value(upper)
+        return True   # GLib.SOURCE_CONTINUE
 
     # ── Sending ──
     def _on_key(self, ctrl, keyval, keycode, state):
