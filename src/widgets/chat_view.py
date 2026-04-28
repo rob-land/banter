@@ -117,6 +117,13 @@ class ChatView(Gtk.Box):
         self._at_bottom = True
         adj = self._scroll.get_vadjustment()
         adj.connect("value-changed", self._on_scroll_changed)
+        # Pin to the bottom when the visible-content height grows while
+        # the user is already at the bottom. Without this, async image
+        # loads (and the slight delay between appending a new bubble
+        # and GTK measuring it) leave the scroll position at the OLD
+        # bottom, which is now mid-screen — so the user sees the new
+        # message briefly and then it scrolls "off" as layout settles.
+        adj.connect("notify::upper", self._on_upper_changed)
 
         # ── Pending image preview ──
         self._preview_bar = Gtk.Box(spacing=8)
@@ -463,6 +470,13 @@ class ChatView(Gtk.Box):
         else:
             self._msgs_box.insert_child_after(
                 self._make_bubble(msg), self._load_more_btn)
+
+    def _on_upper_changed(self, adj, _pspec):
+        """Re-pin to the bottom when the scrollable area grows while
+        the user is already at the bottom. Triggered by GTK measuring
+        a newly-appended bubble or by a chat-view-wide image load."""
+        if self._at_bottom:
+            adj.set_value(adj.get_upper())
 
     def _on_scroll_changed(self, adj):
         """Track whether the user is at the bottom of the message list."""

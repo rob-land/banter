@@ -24,7 +24,13 @@ def _cache_key(url: str) -> str:
 
 
 def load_image_async(url: str, callback, avatar: bool = False):
-    """Download and cache image; call callback(path_or_None) on main thread."""
+    """Download and cache image; call callback(path_or_None) on main thread.
+
+    Failed fetches (4xx / 5xx) are remembered via a sibling `.fail`
+    marker so the same dead URL doesn't get re-requested on every
+    re-render — old GroupMe images return 403 forever, and a chat
+    with even a few of them used to fire a fresh network round-trip
+    per bubble per scroll/refresh."""
     if not url:
         GLib.idle_add(callback, None)
         return
@@ -32,21 +38,31 @@ def load_image_async(url: str, callback, avatar: bool = False):
     def worker():
         key  = _cache_key(url)
         path = CACHE_DIR / f"{key}.img"
-        if not path.exists():
-            dbg("img-fetch: %s", url)
-            try:
-                req = urllib.request.Request(url)
-                req.add_header("User-Agent", f"GroupMe-GNOME/{APP_VERSION}")
-                with urllib.request.urlopen(req, timeout=15) as r:
-                    data = r.read()
-                    path.write_bytes(data)
-                    dbg("img-fetch: saved %d bytes → %s", len(data), path.name)
-            except Exception as e:
-                dbg("img-fetch: failed %s – %s", url, e)
-                GLib.idle_add(callback, None)
-                return
-        else:
+        fail = CACHE_DIR / f"{key}.fail"
+        if path.exists():
             dbg("img-cache: hit %s", path.name)
+            GLib.idle_add(callback, str(path))
+            return
+        if fail.exists():
+            # Previously known-bad URL — don't hit the network again.
+            GLib.idle_add(callback, None)
+            return
+        dbg("img-fetch: %s", url)
+        try:
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", f"GroupMe-GNOME/{APP_VERSION}")
+            with urllib.request.urlopen(req, timeout=15) as r:
+                data = r.read()
+                path.write_bytes(data)
+                dbg("img-fetch: saved %d bytes → %s", len(data), path.name)
+        except Exception as e:
+            dbg("img-fetch: failed %s – %s", url, e)
+            try:
+                fail.write_bytes(b"")
+            except Exception:
+                pass
+            GLib.idle_add(callback, None)
+            return
         GLib.idle_add(callback, str(path))
 
     run_in_background(worker)
