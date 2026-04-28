@@ -42,6 +42,14 @@ class ChatView(Gtk.Box):
         self._poll_id    = None
         # Maps message id → MessageBubble widget for in-place refresh
         self._bubble_map : dict = {}
+        # "Jump to bottom" / "new message" tracking. While the user is
+        # scrolled up, _first_unread_id holds the id of the oldest
+        # message that arrived since they scrolled away — clicking the
+        # jump button takes them straight to it. _unread_sender holds
+        # the most-recent sender's name for the button label.
+        self._first_unread_id: str | None = None
+        self._unread_sender:   str | None = None
+        self._unread_count = 0
         self._build_widgets()
 
     def _read_poll_interval(self) -> int:
@@ -78,20 +86,31 @@ class ChatView(Gtk.Box):
         vp.set_child(self._msgs_box)
         self._scroll.set_child(vp)
 
-        # ── "New messages" banner — shown when scrolled up while msgs arrive ──
-        self._new_msg_bar = Gtk.Button(label="⬇  New messages")
-        self._new_msg_bar.add_css_class("new-msg-bar")
-        self._new_msg_bar.add_css_class("suggested-action")
-        self._new_msg_bar.set_halign(Gtk.Align.CENTER)
-        self._new_msg_bar.set_valign(Gtk.Align.END)
-        self._new_msg_bar.set_margin_bottom(8)
-        self._new_msg_bar.set_visible(False)
-        self._new_msg_bar.connect("clicked", self._on_new_msg_bar_clicked)
+        # ── Jump-to-bottom button (and unread indicator) ──
+        # Visible whenever the user has scrolled up. Shows just a down
+        # arrow when there's nothing new; reveals a "New message[s]
+        # from <name>" label when messages arrive while scrolled up.
+        self._jump_lbl = Gtk.Label(label="")
+        self._jump_lbl.set_visible(False)
+        self._jump_lbl.add_css_class("dim-label")
+        jump_icon = Gtk.Image.new_from_icon_name("go-down-symbolic")
+        jump_content = Gtk.Box(spacing=8)
+        jump_content.append(self._jump_lbl)
+        jump_content.append(jump_icon)
+        self._jump_btn = Gtk.Button()
+        self._jump_btn.set_child(jump_content)
+        self._jump_btn.add_css_class("new-msg-bar")
+        self._jump_btn.add_css_class("suggested-action")
+        self._jump_btn.set_halign(Gtk.Align.CENTER)
+        self._jump_btn.set_valign(Gtk.Align.END)
+        self._jump_btn.set_margin_bottom(8)
+        self._jump_btn.set_visible(False)
+        self._jump_btn.connect("clicked", self._on_jump_clicked)
 
         # Overlay the banner over the scroll window
         scroll_overlay = Gtk.Overlay()
         scroll_overlay.set_child(self._scroll)
-        scroll_overlay.add_overlay(self._new_msg_bar)
+        scroll_overlay.add_overlay(self._jump_btn)
         scroll_overlay.set_vexpand(True)
 
         # Track scroll position to decide auto-scroll vs. banner
@@ -398,13 +417,18 @@ class ChatView(Gtk.Box):
             self._oldest_date = self._msg_date(msgs[-1])
 
     def _append_new(self, msgs):
-        # msgs newest-first; iterate oldest-first to append in order
+        # msgs newest-first; iterate oldest-first to append in order.
+        # The first new message becomes the "first unread" anchor that
+        # the jump button will scroll to when the user is reading older
+        # messages.
+        appended_ids = []
         for m in reversed(msgs):
             d = self._msg_date(m)
             if d != self._newest_date:
                 self._msgs_box.append(self._make_date_sep(d))
                 self._newest_date = d
             self._msgs_box.append(self._make_bubble(m))
+            appended_ids.append(str(m.get("id", "")))
         if msgs:
             self._newest_id   = msgs[0]["id"]
             self._newest_date = self._msg_date(msgs[0])
@@ -412,9 +436,15 @@ class ChatView(Gtk.Box):
         if self._at_bottom:
             # User is at the bottom — scroll to reveal new messages
             self._scroll_bottom()
-        else:
-            # User is reading older messages — show a non-disruptive banner
-            self._new_msg_bar.set_visible(True)
+        elif msgs:
+            # Reading older messages: track unread state for the jump
+            # button. msgs is newest-first, so msgs[-1] is the OLDEST of
+            # the batch — that's the first one the user hasn't seen.
+            if self._first_unread_id is None and appended_ids:
+                self._first_unread_id = appended_ids[0]
+            self._unread_count += len(msgs)
+            self._unread_sender = msgs[0].get("name") or self._unread_sender
+            self._update_jump_button()
 
     def _make_bubble(self, msg):
         bubble = MessageBubble(
@@ -439,11 +469,62 @@ class ChatView(Gtk.Box):
         at_bottom = adj.get_value() >= (adj.get_upper() - adj.get_page_size() - 40)
         self._at_bottom = at_bottom
         if at_bottom:
-            self._new_msg_bar.set_visible(False)
+            # User scrolled (or auto-scrolled) back to the bottom —
+            # everything is now seen, hide the jump affordance.
+            self._clear_unread_state()
+            self._jump_btn.set_visible(False)
+        else:
+            # While scrolled up, the jump button stays visible as a
+            # quick way back regardless of whether new messages have
+            # arrived.
+            self._update_jump_button()
 
-    def _on_new_msg_bar_clicked(self, *_):
-        self._new_msg_bar.set_visible(False)
-        self._scroll_bottom()
+    def _clear_unread_state(self):
+        self._first_unread_id = None
+        self._unread_sender   = None
+        self._unread_count    = 0
+
+    def _update_jump_button(self):
+        """Show/hide and label the jump button based on current scroll
+        position and pending-unread state."""
+        self._jump_btn.set_visible(not self._at_bottom)
+        if self._unread_count == 0:
+            self._jump_lbl.set_visible(False)
+            self._jump_lbl.set_label("")
+            return
+        if self._unread_count == 1 and self._unread_sender:
+            text = f"New message from {self._unread_sender}"
+        elif self._unread_count == 1:
+            text = "New message"
+        else:
+            text = f"{self._unread_count} new messages"
+        self._jump_lbl.set_label(text)
+        self._jump_lbl.set_visible(True)
+
+    def _on_jump_clicked(self, *_):
+        # Prefer scrolling to the first unread message so the user
+        # actually sees what they missed; fall back to plain
+        # scroll-to-bottom when there's no pending unread.
+        target_id = self._first_unread_id
+        if target_id and target_id in self._bubble_map:
+            self._scroll_to_bubble(self._bubble_map[target_id])
+        else:
+            self._scroll_bottom()
+        # Don't clear unread state here — _on_scroll_changed will do
+        # that when the scroll actually reaches the bottom (i.e. the
+        # user has caught up). This handles the case where the first-
+        # unread is mid-screen, not at the bottom.
+
+    def _scroll_to_bubble(self, bubble):
+        """Scroll the message viewport so `bubble` is visible at the top
+        of the visible area."""
+        def _do_scroll():
+            ok, rect = bubble.compute_bounds(self._msgs_box)
+            if ok:
+                adj = self._scroll.get_vadjustment()
+                adj.set_value(max(0.0, rect.origin.y))
+            return False
+        GLib.idle_add(_do_scroll)
 
     def _scroll_bottom(self):
         """Scroll to the bottom of the message list.
