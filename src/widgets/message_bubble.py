@@ -763,11 +763,12 @@ class MessageBubble(Gtk.Box):
         self._show_context_menu(x, y)
 
     # GroupMe enforces a server-side time window for editing one's own
-    # messages. We'd hide the Edit menu past it so users don't see a
-    # confusing failure — but until we find the actual edit endpoint
-    # the entry is hidden unconditionally. See BACKLOG.md.
+    # messages. We hide the Edit menu past it so the user doesn't see
+    # a confusing API failure on a stale message. The actual server
+    # window is somewhere in the ~10-15 min range; we cap at 10 min
+    # to stay conservatively inside it.
     EDIT_WINDOW_SECS = 600   # 10 minutes
-    EDIT_ENABLED     = False
+    EDIT_ENABLED     = True
 
     def _show_context_menu(self, x: float, y: float):
         menu = Gio.Menu()
@@ -970,15 +971,10 @@ class EditMessageDialog(Adw.Dialog):
                     pass
                 self.close()
             else:
-                # Re-enable so the user can cancel, but DON'T offer to
-                # retry — the failure isn't transient, the endpoint is
-                # missing. See api.edit_message docstring.
                 self._save_btn.set_label("Save")
                 self._save_btn.set_sensitive(True)
                 try:
-                    bubble.win.toast(
-                        "GroupMe rejected the edit "
-                        "(API not available — see backlog)")
+                    bubble.win.toast("Failed to edit message")
                 except Exception:
                     pass
 

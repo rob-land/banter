@@ -17,6 +17,35 @@ from .async_utils import run_in_background
 from pathlib import Path
 
 
+# ─────────────────────────── Message helpers ─────────────────────
+
+def is_hidden_system_message(msg: dict) -> bool:
+    """Return True if `msg` is a GroupMe-issued system notification
+    that the UI should suppress entirely.
+
+    GroupMe injects a synthetic message (system=True, sender "GroupMe")
+    after every edit and delete — e.g. 'Rob Daniel edited to: "..."'
+    or 'A message was deleted.'. Both are noise for our UI: we already
+    update the original bubble in place on edits and remove it on
+    deletes, so the system message just duplicates the information.
+
+    Other system messages (joins, name changes, event creation, etc.)
+    are meaningful and stay visible.
+    """
+    if not msg.get("system"):
+        return False
+    text = (msg.get("text") or "").lower()
+    # Edit notifications — GroupMe's exact phrasing is
+    # `<Sender> edited to: "<new text>"`.
+    if "edited to:" in text:
+        return True
+    # Delete notifications — exact text varies slightly
+    # ("A message was deleted." / "<Sender> deleted a message.")
+    if "was deleted" in text or "deleted a message" in text:
+        return True
+    return False
+
+
 # ─────────────────────────── Image Helpers ───────────────────────
 
 def _cache_key(url: str) -> str:

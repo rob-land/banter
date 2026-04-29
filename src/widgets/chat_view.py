@@ -12,6 +12,7 @@ from gi.repository import Gtk, Adw, GLib, Gdk, Gio
 from ..constants import dbg
 from ..async_utils import run_in_background
 from ..api import GroupMeAPI
+from ..helpers import is_hidden_system_message
 from .mention_popover import MentionPopover, EVERYONE_ID
 from .message_bubble import MessageBubble
 from .misc import DateSeparator
@@ -526,6 +527,8 @@ class ChatView(Gtk.Box):
         # msgs is newest-first; iterate oldest-first to build top-down
         prev_date = None
         for m in reversed(msgs):
+            if is_hidden_system_message(m):
+                continue
             d = self._msg_date(m)
             if d != prev_date:
                 self._msgs_box.append(self._make_date_sep(d))
@@ -556,6 +559,8 @@ class ChatView(Gtk.Box):
         prev_date = None  # start with no "previous" — we add seps for each new date
 
         for m in reversed(msgs):   # oldest → newest
+            if is_hidden_system_message(m):
+                continue
             d = self._msg_date(m)
             if d != prev_date:
                 widgets.append(self._make_date_sep(d))
@@ -592,6 +597,8 @@ class ChatView(Gtk.Box):
         # messages.
         appended_ids = []
         for m in reversed(msgs):
+            if is_hidden_system_message(m):
+                continue
             d = self._msg_date(m)
             if d != self._newest_date:
                 self._msgs_box.append(self._make_date_sep(d))

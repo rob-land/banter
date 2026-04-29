@@ -209,40 +209,33 @@ class GroupMeAPI:
         return r.get("response", {}).get("message")
 
     def edit_message(self, conv_id, msg_id, text: str, attachments=None):
-        """Edit an existing message.
+        """Edit an existing group message.
 
-        STATUS: GroupMe's public v3 API doesn't expose a documented
-        edit endpoint, and every URL/method combo we've tried so far
-        returns an HTML 500 page (Rails missing-route style, not a
-        4xx with JSON — meaning the route isn't registered, not that
-        the request is malformed). Until we can capture the official
-        web client's actual edit request and replicate it, this
-        always returns None and the UI surfaces "Edit not supported".
+        Recovered from the official GroupMe Web client (29 Apr 2026):
+            PUT https://api.groupme.com/v4/groups/{gid}/messages/{mid}
+            Body (UNWRAPPED — no "message" key): {"text":"...","attachments":[...]}
 
-        Tried (all 500 HTML):
-          - PUT  /v3/conversations/{cid}/messages/{mid}     {"message": {...}}
-          - POST https://v2.groupme.com/messages/{cid}/{mid} {"message": {...}}
-          - PATCH /v3/conversations/{cid}/messages/{mid}    {"message": {...}}
-          - POST /v3/groups/{gid}/messages/{mid}/edit       {"message": {...}}
+        Note: this is the v4 endpoint, not v3 — the rest of the API is
+        v3 but this single call uses the newer prefix. DMs likely use
+        an analogous /v4/conversations/{cid}/messages/{mid} but we
+        haven't captured that one yet.
+
+        Returns the updated message dict on success, None on failure.
         """
-        msg = {"text": text}
-        if attachments is not None:
-            msg["attachments"] = attachments
-
-        attempts = (
-            ("POST",  f"/messages/{conv_id}/{msg_id}",
-                {"message": msg}, "https://v2.groupme.com"),
-            ("PUT",   f"/conversations/{conv_id}/messages/{msg_id}",
-                {"message": msg}, None),
-            ("PATCH", f"/conversations/{conv_id}/messages/{msg_id}",
-                {"message": msg}, None),
-            ("POST",  f"/groups/{conv_id}/messages/{msg_id}/edit",
-                {"message": msg}, None),
-        )
-        for method, path, body, base in attempts:
-            r = self._req(method, path, body, base=base)
-            if self._ok(r):
-                return r.get("response", {}).get("message") or {"text": text}
+        body = {"text": text, "attachments": attachments or []}
+        r = self._req("PUT",
+                       f"/groups/{conv_id}/messages/{msg_id}",
+                       body,
+                       base="https://api.groupme.com/v4")
+        if self._ok(r):
+            return r.get("response", {}).get("message") or {"text": text}
+        # DM fallback (untested) — same shape under /conversations/.
+        r = self._req("PUT",
+                       f"/conversations/{conv_id}/messages/{msg_id}",
+                       body,
+                       base="https://api.groupme.com/v4")
+        if self._ok(r):
+            return r.get("response", {}).get("message") or {"text": text}
         return None
 
     def delete_message(self, conv_id, msg_id):

@@ -12,7 +12,8 @@ from .async_utils import run_in_background
 from .config import Config
 from .api import GroupMeAPI
 from .push import GroupMePush
-from .helpers import set_avatar_from_url, ensure_packs_loaded
+from .helpers import (
+    set_avatar_from_url, ensure_packs_loaded, is_hidden_system_message)
 from .widgets.base import StandardDialog
 from .widgets.conversation_row import ConversationRow, ContactRow
 from .widgets.chat_view import ChatView
@@ -238,6 +239,12 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Also keep the sidebar unread counts fresh on new messages
         if ev_type == "line.create":
+            # System notifications GroupMe injects after edits/deletes
+            # are noise — they'd update the sidebar preview to "Rob
+            # edited to: ..." which buries the actual conversation.
+            if is_hidden_system_message(subject):
+                return
+
             gid = str(subject.get("group_id", ""))
             key = self._conv_key("group", gid)
             row = self._rows.get(key)
