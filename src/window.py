@@ -89,6 +89,53 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self._go_login()
 
+    # ── Mute helpers ──
+    @staticmethod
+    def _mute_key(conv_type: str, conv_id) -> str:
+        """Config key for the mute store. Groups use their bare gid
+        (matches the legacy v1 schema); DMs are prefixed `dm:` so the
+        key spaces don't collide."""
+        s = str(conv_id)
+        return f"dm:{s}" if conv_type == "dm" else s
+
+    def is_conv_muted(self, conv_type: str, conv_id) -> bool:
+        return self._config.is_muted(self._mute_key(conv_type, conv_id))
+
+    def _refresh_mute_button(self, btn, conv_type: str, conv_id):
+        muted = self.is_conv_muted(conv_type, conv_id)
+        # Adwaita only ships notifications-DISABLED-symbolic, so we
+        # bundle our own bell-without-slash for the unmuted state
+        # (see data/meson.build).
+        btn.set_icon_name(
+            "notifications-disabled-symbolic" if muted
+            else "banter-notifications-active-symbolic")
+        btn.set_tooltip_text(
+            "Unmute notifications" if muted else "Mute notifications")
+
+    def _on_mute_toggle(self, btn, conv_type: str, conv_id):
+        self.toggle_conv_mute(conv_type, conv_id)
+        self._refresh_mute_button(btn, conv_type, conv_id)
+        muted = self.is_conv_muted(conv_type, conv_id)
+        try:
+            self.toast(
+                "Conversation muted" if muted
+                else "Notifications on")
+        except Exception:
+            pass
+
+    def toggle_conv_mute(self, conv_type: str, conv_id):
+        """Flip the mute state for the conversation. Permanent mute
+        (epoch -1) — the UI doesn't yet expose timed options."""
+        key = self._mute_key(conv_type, conv_id)
+        if self._config.is_muted(key):
+            self._config.clear_mute(key)
+        else:
+            self._config.set_mute(key, -1)
+        # Refresh the sidebar row's muted indicator if visible.
+        row = self._rows.get(self._conv_key(conv_type, conv_id))
+        if row is not None and hasattr(row, "set_muted"):
+            row.set_muted(self._config.is_muted(key))
+
     # ── Conversation key helper ──
     @staticmethod
     def _conv_key(conv_type: str, conv_id) -> tuple:
@@ -615,6 +662,15 @@ class MainWindow(Adw.ApplicationWindow):
         find_btn.set_action_name("win.find")
         hdr.pack_end(find_btn)
 
+        # Mute toggle. Bell when notifications are on; bell-with-slash
+        # when the conv is muted. Tooltip flips to match.
+        mute_btn = Gtk.Button()
+        mute_btn.add_css_class("flat")
+        self._refresh_mute_button(mute_btn, "group", group["id"])
+        mute_btn.connect("clicked", self._on_mute_toggle, "group",
+                          str(group["id"]))
+        hdr.pack_end(mute_btn)
+
         self._content_nav.set_title(esc(group.get("name","Group")))
         self._content_wrap.append(hdr)
 
@@ -704,6 +760,13 @@ class MainWindow(Adw.ApplicationWindow):
         find_btn.set_tooltip_text("Search this chat (Ctrl+F)")
         find_btn.set_action_name("win.find")
         hdr.pack_end(find_btn)
+
+        mute_btn = Gtk.Button()
+        mute_btn.add_css_class("flat")
+        self._refresh_mute_button(mute_btn, "dm", other_user_id)
+        mute_btn.connect("clicked", self._on_mute_toggle, "dm",
+                          str(other_user_id))
+        hdr.pack_end(mute_btn)
 
         self._content_nav.set_title(esc(name))
         self._content_wrap.append(hdr)
@@ -871,11 +934,17 @@ class MainWindow(Adw.ApplicationWindow):
     def _send_desktop_notification(self, title: str, body: str,
                                     tag: str = "banter-msg"):
         """Send a desktop notification via GApplication (works in Flatpak)."""
+        # Per-conversation mute. Tag layout is "group-{gid}" or
+        # "dm-{other_id}"; the config store is unified, with DM keys
+        # prefixed "dm:" so they don't collide with group ids.
+        mute_key = None
         if tag.startswith("group-"):
-            gid = tag[len("group-"):]
-            if self._config.is_muted(gid):
-                dbg("notification suppressed (muted): %s", tag)
-                return
+            mute_key = tag[len("group-"):]
+        elif tag.startswith("dm-"):
+            mute_key = "dm:" + tag[len("dm-"):]
+        if mute_key and self._config.is_muted(mute_key):
+            dbg("notification suppressed (muted): %s", tag)
+            return
         try:
             app = self.get_application()
             if app is None:

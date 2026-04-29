@@ -124,17 +124,23 @@ class ConversationRow(Adw.ActionRow):
         # Set initial state
         if conv_type == "group":
             unread = int(conv.get("messages", {}).get("unread_count") or 0)
-            gid    = str(conv.get("id", ""))
         else:
             unread = int(conv.get("unread_count") or 0)
-            gid    = None
 
         self.set_unread(unread)
-        self._refresh_mute(gid)
+        if self._config:
+            self.set_muted(self._config.is_muted(self._mute_key()))
 
-    def _refresh_mute(self, gid):
-        if self._config and gid:
-            self._mute_icon.set_visible(self._config.is_muted(gid))
+    def _mute_key(self) -> str:
+        """Mirror MainWindow._mute_key — keep the formats in sync."""
+        cid = (str(self.conv.get("other_user", {}).get("id", ""))
+               if self.conv_type == "dm"
+               else str(self.conv.get("id", "")))
+        return f"dm:{cid}" if self.conv_type == "dm" else cid
+
+    def set_muted(self, muted: bool):
+        """Toggle the small bell-slash indicator next to the unread dot."""
+        self._mute_icon.set_visible(bool(muted))
 
     def set_unread(self, count: int):
         count = int(count or 0)

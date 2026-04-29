@@ -32,3 +32,14 @@ install_data(
   'icons/hicolor/symbolic/apps/land.rob.Banter-symbolic.svg',
   install_dir: datadir / 'icons' / 'hicolor' / 'symbolic' / 'apps',
 )
+
+# Bundled fallback bell icon — Adwaita ships notifications-disabled-symbolic
+# but no plain unmuted variant, so we need to provide our own for the
+# mute toggle's "not muted" state. Lives under scalable/actions because
+# hicolor's index.theme registers that context dir but not symbolic/actions
+# (symbolic SVGs in hicolor go in scalable/, distinguished by the
+# `-symbolic.svg` filename suffix).
+install_data(
+  'icons/hicolor/scalable/actions/banter-notifications-active-symbolic.svg',
+  install_dir: datadir / 'icons' / 'hicolor' / 'scalable' / 'actions',
+)

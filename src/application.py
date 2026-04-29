@@ -2,6 +2,7 @@
 
 import sys
 import urllib.parse
+from pathlib import Path
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -39,9 +40,39 @@ class BanterApplication(Adw.Application):
 
     def _on_activate(self, *_):
         self._load_css()
+        self._register_bundled_icons()
         if not self._window:
             self._window = MainWindow(self)
         self._window.present()
+
+    def _register_bundled_icons(self):
+        """Add our bundled icon directories to the GTK icon theme.
+
+        When running from the meson staging root (the dev workflow,
+        `PYTHONPATH=…/site-packages …/bin/banter`) GTK only searches
+        XDG-default theme paths and won't find icons we ship under
+        `<prefix>/share/icons`. Walk up from this module hunting for
+        a `share/icons` sibling — the directory layout differs
+        between Fedora's (`lib/python<X.Y>/site-packages/banter/`)
+        and the historical pkgdatadir layout (`share/banter/`), so
+        a probe is more robust than a fixed parents[N]."""
+        try:
+            display = Gdk.Display.get_default()
+            if display is None:
+                return
+            theme = Gtk.IconTheme.get_for_display(display)
+
+            here = Path(__file__).resolve()
+            # Probe up to 8 levels — handles all layouts we ship.
+            for ancestor in here.parents[:8]:
+                candidate = ancestor / "share" / "icons"
+                if candidate.is_dir():
+                    theme.add_search_path(str(candidate))
+                    dbg("registered icon search path: %s", candidate)
+                    return
+            dbg("no bundled icon path found relative to %s", here)
+        except Exception as e:
+            dbg("icon search-path registration failed: %s", e)
 
     def _on_open(self, app, files, n_files, hint):
         """Handle banter:// URI scheme redirects from the OAuth browser flow."""
