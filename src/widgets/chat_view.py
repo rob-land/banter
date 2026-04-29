@@ -42,11 +42,13 @@ class ChatView(Gtk.Box):
         self._poll_id    = None
         # Maps message id → MessageBubble widget for in-place refresh
         self._bubble_map : dict = {}
-        # Tick-callback machinery for the scroll-to-bottom pinner —
-        # see _scroll_bottom for why a single set_value isn't enough.
-        self._pin_tick_id     = 0
-        self._pin_frames_left = 0
-        self._pin_last_upper  = -1.0
+        # Pin-to-bottom machinery — see _scroll_bottom for why a single
+        # set_value isn't enough. _pin_seq invalidates older pin
+        # sequences when a new one starts; _suppress_scroll_change
+        # blocks our own set_value calls from being misread as user
+        # scrolls in _on_scroll_changed.
+        self._pin_seq                = 0
+        self._suppress_scroll_change = False
         # "Jump to bottom" / "new message" tracking. While the user is
         # scrolled up, _first_unread_id holds the id of the oldest
         # message that arrived since they scrolled away — clicking the
@@ -229,9 +231,9 @@ class ChatView(Gtk.Box):
         if self._poll_id:
             GLib.source_remove(self._poll_id)
             self._poll_id = None
-        if self._pin_tick_id != 0:
-            self.remove_tick_callback(self._pin_tick_id)
-            self._pin_tick_id = 0
+        # Bumping the seq invalidates any in-flight pin timeouts so they
+        # short-circuit instead of touching a destroyed adjustment.
+        self._pin_seq += 1
 
     def _start_polling(self):
         """Groups use the MainWindow-level push client.
@@ -484,16 +486,22 @@ class ChatView(Gtk.Box):
         the user is already at the bottom. Triggered by GTK measuring
         a newly-appended bubble or by a chat-view-wide image load."""
         if self._at_bottom:
-            adj.set_value(adj.get_upper())
+            self._suppress_scroll_change = True
+            try:
+                adj.set_value(adj.get_upper())
+            finally:
+                self._suppress_scroll_change = False
 
     def _on_scroll_changed(self, adj):
         """Track whether the user is at the bottom of the message list."""
-        # While the pin tick is forcibly keeping us at the bottom across
-        # layout passes, ignore intermediate positions — they're
-        # measurement artefacts, not user scrolls.
-        if self._pin_tick_id != 0:
+        # Our own pin set_value calls must not be misread as user scrolls.
+        if self._suppress_scroll_change:
             return
-        at_bottom = adj.get_value() >= (adj.get_upper() - adj.get_page_size() - 40)
+        # Generous tolerance: image attachments and reaction rows can
+        # bump `upper` by hundreds of px AFTER our set_value lands, and
+        # the resulting value/upper mismatch must not be misread as the
+        # user scrolling away (which would abandon the pin sequence).
+        at_bottom = adj.get_value() >= (adj.get_upper() - adj.get_page_size() - 200)
         self._at_bottom = at_bottom
         if at_bottom:
             # User scrolled (or auto-scrolled) back to the bottom —
@@ -554,51 +562,76 @@ class ChatView(Gtk.Box):
         GLib.idle_add(_do_scroll)
 
     def _scroll_bottom(self):
-        """Pin the scroll position to the bottom across the next several
-        layout passes.
+        """Reliably scroll the message list to the bottom of the last
+        message.
 
-        A single ``adj.set_value(adj.get_upper())`` is unreliable because
-        GTK4's measure machinery does width-for-height incrementally:
-        wrapping labels finish their height calculation only after the
-        viewport's allocated width is known, which can be a frame or
-        two AFTER we set value. By the time the last bubble's reaction
-        row is fully measured, ``upper`` has grown but our scroll value
-        is stuck at the old (smaller) bottom, leaving the last message
-        partially clipped.
+        GTK4 measures wrapping labels with width-for-height, so the last
+        bubble's height (especially with a multi-line text label and a
+        reaction row) often isn't finalized for a frame or two after we
+        append it. A single ``set_value(upper)`` lands a few pixels
+        short, leaving the bubble visually clipped with no way to scroll
+        further until the user manually scrolls up and back.
 
-        Instead, we install a tick callback that re-pins each frame
-        until ``upper`` has been stable for two consecutive frames
-        (with a hard cap of ~1 s so we never loop forever)."""
+        Schedule pin attempts at increasing delays (0/50/150/350/700/
+        1200 ms) so at least one fires after the slowest measure has
+        settled. Each attempt cross-checks ``adj.upper`` against the
+        last child's actual ``compute_bounds`` — sometimes the latter
+        reflects new content before ``upper`` does."""
         self._at_bottom = True
-        self._pin_frames_left = 60        # ~1s @ 60 Hz, then give up
-        self._pin_last_upper  = -1.0
-        if self._pin_tick_id == 0:
-            self._pin_tick_id = self.add_tick_callback(self._pin_tick)
+        self._pin_seq  += 1
+        seq = self._pin_seq
+        for delay in (0, 50, 150, 350, 700, 1200, 2000):
+            GLib.timeout_add(delay, self._pin_to_bottom_once, seq)
 
-    def _pin_tick(self, _widget, _frame_clock):
-        adj = self._scroll.get_vadjustment()
+    def _pin_to_bottom_once(self, seq):
+        # A newer _scroll_bottom invalidates older sequences. Note: we
+        # do NOT bail on `not self._at_bottom` here — _at_bottom can be
+        # spuriously cleared by an async value-changed when `upper`
+        # grows from late layout passes, and we want the pin sequence
+        # to ride that out. Always re-assert at_bottom while pinning.
+        if seq != self._pin_seq:
+            return False
+        self._at_bottom = True
+
+        # Force the message box and the last bubble to re-measure.
+        # queue_resize is async but it bumps GTK's measure machinery
+        # forward by a frame, which (combined with our staggered
+        # timeouts) helps converge to the correct height faster.
+        self._msgs_box.queue_resize()
+        last = self._msgs_box.get_last_child()
+        if last is not None:
+            last.queue_resize()
+
+        adj   = self._scroll.get_vadjustment()
         upper = adj.get_upper()
+        # Cross-check upper against the last child's natural measured
+        # height for the current allocated width — this often reflects
+        # the bubble's true size before adj.upper has caught up.
+        if last is not None:
+            ok, rect = last.compute_bounds(self._msgs_box)
+            if ok:
+                content_bottom = rect.origin.y + rect.size.height
+                width = self._msgs_box.get_width()
+                if width > 0:
+                    try:
+                        _, nat_h, _, _ = last.measure(
+                            Gtk.Orientation.VERTICAL, width)
+                        content_bottom = max(content_bottom,
+                                              rect.origin.y + nat_h)
+                    except Exception:
+                        pass
+                upper = max(upper, content_bottom)
 
-        # If the user actively scrolled away during the pin window,
-        # abandon — their scroll wins.
-        if not self._at_bottom and self._pin_last_upper >= 0:
-            self._pin_tick_id = 0
-            return False  # GLib.SOURCE_REMOVE
+        # Diagnostic — re-enable when investigating scroll-pin issues:
+        # dbg("pin: seq=%d upper=%.1f page=%.1f value=%.1f",
+        #     seq, upper, adj.get_page_size(), adj.get_value())
 
-        self._pin_frames_left -= 1
-        if self._pin_frames_left <= 0:
-            self._pin_tick_id = 0
-            return False
-
-        # Stop once `upper` has been steady for two consecutive frames —
-        # that means measurement has settled.
-        if upper == self._pin_last_upper:
-            self._pin_tick_id = 0
-            return False
-        self._pin_last_upper = upper
-
-        adj.set_value(upper)
-        return True   # GLib.SOURCE_CONTINUE
+        self._suppress_scroll_change = True
+        try:
+            adj.set_value(upper)   # GTK clamps to upper - page_size
+        finally:
+            self._suppress_scroll_change = False
+        return False
 
     # ── Sending ──
     def _on_key(self, ctrl, keyval, keycode, state):

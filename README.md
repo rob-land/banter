@@ -78,7 +78,7 @@ meson setup _build --prefix=/usr
 meson install -C _build --destdir /tmp/banter-root
 
 # Run directly from the staging root
-PYTHONPATH=/tmp/banter-root/usr/share/banter \
+PYTHONPATH=$(echo /tmp/banter-root/usr/lib/python*/site-packages) \
   /tmp/banter-root/usr/bin/banter
 ```
 
@@ -213,27 +213,33 @@ banter/
 │           └── symbolic/apps/land.rob.Banter-symbolic.svg
 ├── po/                          Translations (none yet)
 └── src/
+    ├── main.py                  Entry point invoked by the launcher script
     ├── application.py           BanterApplication (Adw.Application)
     ├── api.py                   GroupMe REST API client
+    ├── async_utils.py           run_in_background worker-thread helper
     ├── config.py                Accounts and preferences
     ├── constants.py             App-wide constants and logging
     ├── css.py                   Application stylesheet
-    ├── helpers.py               Image loading and caching
+    ├── helpers.py               Image loading and caching, pack catalog
     ├── oauth.py                 OAuth sign-in dialog
     ├── push.py                  WebSocket push client (Bayeux/Faye)
     ├── window.py                Main window
     ├── widgets/
+    │   ├── base.py              StandardDialog base class
     │   ├── chat_view.py         Message list and compose bar
     │   ├── conversation_row.py  Sidebar conversation rows
+    │   ├── event_card.py        Inline event/poll cards in bubbles
     │   ├── message_bubble.py    Message bubbles and reactions
-    │   └── misc.py              ImageAttachment, DateSeparator, LoadingRow
+    │   ├── misc.py              ImageAttachment, DateSeparator, LoadingRow
+    │   └── reactions_sheet.py   Reaction picker (emoji + pack tabs)
     └── dialogs/
         ├── accounts.py          Multi-account switcher
         ├── events.py            Create event / create poll
         ├── gallery.py           Image gallery
         ├── group.py             Group detail and contact detail
+        ├── login.py             Initial sign-in dialog
         ├── members.py           Member list
-        └── settings.py         Group settings and preferences
+        └── settings.py          Group settings and preferences
 ```
 
 ---
