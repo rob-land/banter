@@ -15,6 +15,15 @@ A native GNOME client for GroupMe, built with GTK4 and libadwaita.
   appear instantly without polling
 - **Groups and direct messages** unified in a single sidebar, sorted by
   most recent activity
+- **Compose tools**: per-conversation drafts (preserved on chat switch),
+  `@`-mention autocomplete with a server-detected `@everyone`, and
+  quote-reply with an inline preview
+- **Edit and delete your own messages** — long-press / right-click the
+  bubble, with edit gated to GroupMe's server-side time window
+- **In-conversation search** (Ctrl+F or magnifying-glass header button)
+  with prev/next navigation and a live "X of Y" match counter
+- **Per-conversation mute** with a header bell toggle and a sidebar
+  indicator on muted rows
 - **Emoji reactions** with hover tooltips showing who reacted, a detail
   dialog listing all reactions, and a picker for adding your own
 - **Reply threads** — messages that reply to an earlier message show a
@@ -24,12 +33,13 @@ A native GNOME client for GroupMe, built with GTK4 and libadwaita.
   as tappable links
 - **Contacts tab** populated automatically from group members, tap any
   contact to open a direct message
-- **Group management** — member list, group settings, mute, create events
+- **Group management** — member list, group settings, create events
   and polls
 - **Share group** — copy invite link, system share sheet, or scan a QR code
 - **OAuth sign-in** via the system browser — no password is ever stored by
   the app
-- **Desktop notifications** with click-to-focus
+- **Desktop notifications** with click-to-focus, suppressed for muted
+  conversations
 - **Adaptive layout** — works on both desktop and mobile (tested on FuriOS
   on the Furi FLX1s and Debian on the Raspberry Pi 5)
 - **GNOME Platform 49** — follows libadwaita conventions, respects the
@@ -229,7 +239,8 @@ banter/
     │   ├── chat_view.py         Message list and compose bar
     │   ├── conversation_row.py  Sidebar conversation rows
     │   ├── event_card.py        Inline event/poll cards in bubbles
-    │   ├── message_bubble.py    Message bubbles and reactions
+    │   ├── mention_popover.py   @-mention autocomplete in compose bar
+    │   ├── message_bubble.py    Bubbles, reactions, edit/delete/reply menu
     │   ├── misc.py              ImageAttachment, DateSeparator, LoadingRow
     │   └── reactions_sheet.py   Reaction picker (emoji + pack tabs)
     └── dialogs/

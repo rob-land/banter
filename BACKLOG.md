@@ -2,6 +2,45 @@
 
 Things deferred for later. Not a bug tracker — notes to self.
 
+## Feature ideas — not yet started
+
+These came out of the "what's missing vs the official client" survey
+and haven't been touched yet. Loose priority order, top = most useful.
+
+- **GIF picker** in the compose bar (Tenor or Giphy). GroupMe accepts
+  image attachments by URL, so any web GIF works once we have a
+  picker UI. Tenor has a free tier with a Google Cloud key.
+- **Pin / unpin messages.** GroupMe data already exposes `pinned_at`
+  and `pinned_by`; the official client has the action. Likely an
+  undocumented v3 endpoint along the lines of `POST /messages/{cid}/{mid}/pin`
+  — capture from web client when ready (same playbook as edit).
+- **File (non-image) attachments** — GroupMe supports a `file`
+  attachment type but it's gated behind a separate upload flow that's
+  not in the public docs. Lower priority — most users send images.
+- **"Jump to date" navigator** for long histories. Calendar picker in
+  the search bar, fetch by `before_id` until we cross the target
+  timestamp, scroll there.
+- **Per-conversation mute** with timed options ("1 hour", "8 hours")
+  instead of just permanent toggle. The config layer (`set_mute(key, until_epoch)`)
+  already supports it; only the UI is missing.
+- **Quote-reply tweaks** — currently the reply preview shows
+  `"Replying to <name>: <text>"` as plain text; could borrow the
+  styled left-bar treatment that incoming reply quotes use.
+
+## Edit-message UX polish
+
+**Status:** core feature works. Two small issues for later.
+
+- Error message when an edit fails after the server-side time window
+  is just "Failed to edit message". Worth surfacing the actual
+  reason ("GroupMe edit window has expired") if the response gives us
+  one — would need to pass through the `meta.errors` payload.
+- DM edits go untested. `api.edit_message` falls back to
+  `PUT /v4/conversations/{cid}/messages/{mid}` after the group path,
+  but no DM HAR has been captured to verify shape.
+
+---
+
 ## Pack picker doesn't match the official GroupMe client
 
 **Status:** deferred, cosmetic.
