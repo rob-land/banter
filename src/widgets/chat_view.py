@@ -31,6 +31,12 @@ class ChatView(Gtk.Box):
         self._win          = window
         self._is_dm        = is_dm
         self._config       = config
+        # Conversation key used by the parent window to look up our
+        # draft text. Uses the same key shape as MainWindow._rows.
+        self._draft_key    = (
+            "dm" if is_dm else "group",
+            str(other_user_id) if (is_dm and other_user_id) else self._gid,
+        )
         # For DMs: the other participant's user_id (used for fetch/send)
         self._other_uid    = str(other_user_id) if other_user_id else self._gid
         self._poll_ms      = self._read_poll_interval()
@@ -73,6 +79,10 @@ class ChatView(Gtk.Box):
         # change-handler so it doesn't tear down the popover state
         # while we're still using it.
         self._in_mention_pick = False
+        # Reply state. Set to a message dict when the user picks
+        # "Reply" on a bubble; cleared on send or via the reply
+        # preview's close button.
+        self._reply_target: dict | None = None
         self._build_widgets()
 
     def _read_poll_interval(self) -> int:
@@ -136,6 +146,52 @@ class ChatView(Gtk.Box):
         scroll_overlay.add_overlay(self._jump_btn)
         scroll_overlay.set_vexpand(True)
 
+        # ── In-conversation search bar ──
+        # Toggled by Ctrl+F or by the magnifying-glass header button.
+        # Matches against the text of every loaded MessageBubble.
+        # Up/Down arrows or the visible nav buttons cycle through
+        # results; Escape closes.
+        self._search_bar   = Gtk.SearchBar()
+        self._search_entry = Gtk.SearchEntry()
+        self._search_entry.set_placeholder_text("Search this chat…")
+        self._search_entry.set_hexpand(True)
+
+        prev_btn = Gtk.Button(icon_name="go-up-symbolic")
+        prev_btn.add_css_class("flat")
+        prev_btn.set_tooltip_text("Previous match")
+        prev_btn.connect("clicked",
+                          lambda *_: self._chat_search_step(-1))
+        next_btn = Gtk.Button(icon_name="go-down-symbolic")
+        next_btn.add_css_class("flat")
+        next_btn.set_tooltip_text("Next match")
+        next_btn.connect("clicked",
+                          lambda *_: self._chat_search_step(1))
+        # Status label like "3 of 17" so the user knows where they are
+        # in the result set.
+        self._search_status = Gtk.Label(label="")
+        self._search_status.add_css_class("dim-label")
+        self._search_status.set_margin_start(8)
+        self._search_status.set_margin_end(8)
+
+        search_box = Gtk.Box(spacing=4)
+        search_box.append(self._search_entry)
+        search_box.append(self._search_status)
+        search_box.append(prev_btn)
+        search_box.append(next_btn)
+        self._search_bar.set_child(search_box)
+        self._search_bar.connect_entry(self._search_entry)
+        self._search_bar.set_show_close_button(True)
+        self._search_entry.connect("search-changed",
+                                     self._on_chat_search_changed)
+        self._search_entry.connect("next-match",
+                                     lambda *_: self._chat_search_step(1))
+        self._search_entry.connect("previous-match",
+                                     lambda *_: self._chat_search_step(-1))
+        self._search_entry.connect("activate",
+                                     lambda *_: self._chat_search_step(1))
+        self._search_matches: list = []   # ordered list of MessageBubble
+        self._search_index: int   = 0
+
         # Track scroll position to decide auto-scroll vs. banner
         self._at_bottom = True
         adj = self._scroll.get_vadjustment()
@@ -163,6 +219,26 @@ class ChatView(Gtk.Box):
         clear_btn.connect("clicked", self._clear_attachment)
         self._preview_bar.append(clear_btn)
 
+        # ── Reply preview ──
+        # Shown when the user picks "Reply" on a bubble. Sits in the
+        # bottom-bar stack just like the image preview so it stays
+        # above the compose entry but below the scroll viewport.
+        self._reply_bar = Gtk.Box(spacing=8)
+        self._reply_bar.set_margin_start(12)
+        self._reply_bar.set_margin_end(12)
+        self._reply_bar.set_visible(False)
+        self._reply_bar.append(
+            Gtk.Image.new_from_icon_name("mail-reply-sender-symbolic"))
+        self._reply_label = Gtk.Label(xalign=0)
+        self._reply_label.set_ellipsize(3)
+        self._reply_label.set_hexpand(True)
+        self._reply_bar.append(self._reply_label)
+        reply_close = Gtk.Button(icon_name="window-close-symbolic")
+        reply_close.add_css_class("flat")
+        reply_close.connect("clicked",
+                             lambda *_: self.set_reply_target(None))
+        self._reply_bar.append(reply_close)
+
         # ── Compose bar ──
         compose = Gtk.Box(spacing=8)
         compose.add_css_class("compose-bar")
@@ -180,7 +256,12 @@ class ChatView(Gtk.Box):
         self._entry.set_accepts_tab(False)
         self._entry.set_pixels_above_lines(4)
         self._entry.set_pixels_below_lines(4)
-        self._entry.get_buffer().set_text("")
+        # Restore any saved draft for this conversation. _on_buf_changed
+        # isn't wired up yet, so this set_text doesn't trigger the
+        # @-mention detector spuriously.
+        drafts = getattr(self._win, "_drafts", None) or {}
+        self._entry.get_buffer().set_text(
+            drafts.get(self._draft_key, ""))
 
         entry_scroll = Gtk.ScrolledWindow()
         entry_scroll.set_child(self._entry)
@@ -221,8 +302,13 @@ class ChatView(Gtk.Box):
         #     the compose bar stays visible above the keyboard. ──
         tv = Adw.ToolbarView()
         tv.set_vexpand(True)
+        # SearchBar lives at the top of the chat content; revealed by
+        # the toggle_search() window action (Ctrl+F).
+        tv.add_top_bar(self._search_bar)
         tv.set_content(scroll_overlay)
-        # add_bottom_bar stacks in order added, so preview sits above compose
+        # add_bottom_bar stacks in order added, so reply preview and
+        # image preview sit above the compose entry.
+        tv.add_bottom_bar(self._reply_bar)
         tv.add_bottom_bar(self._preview_bar)
         tv.add_bottom_bar(compose)
         self.append(tv)
@@ -253,6 +339,23 @@ class ChatView(Gtk.Box):
     # ── Lifecycle ──
     def stop(self):
         """Stop fallback DM poll timer (push lives in MainWindow)."""
+        # Persist any in-progress compose text into the parent window's
+        # draft store so it's restored next time this conversation is
+        # opened. We always write — including the empty string — so a
+        # stale draft from a previous switch is properly cleared.
+        try:
+            buf  = self._entry.get_buffer()
+            text = buf.get_text(buf.get_start_iter(),
+                                 buf.get_end_iter(), False)
+            drafts = getattr(self._win, "_drafts", None)
+            if drafts is not None:
+                if text:
+                    drafts[self._draft_key] = text
+                else:
+                    drafts.pop(self._draft_key, None)
+        except Exception:
+            pass
+
         if self._poll_id:
             GLib.source_remove(self._poll_id)
             self._poll_id = None
@@ -290,6 +393,26 @@ class ChatView(Gtk.Box):
                     self._bubble_map[msg_id].refresh(subject)
                 else:
                     self._append_new([subject])
+
+        elif ev_type in ("line.update", "message.update", "line.edit"):
+            # Edit notification — replace the bubble's text and stamp
+            # an "(edited)" indicator. The server may surface the new
+            # text directly in `subject` or nested under `line`.
+            line   = subject.get("line") or subject
+            msg_id = str(line.get("id") or subject.get("line_id") or
+                          subject.get("message_id") or "")
+            if msg_id and msg_id in self._bubble_map:
+                self._bubble_map[msg_id].update_text_from(line)
+
+        elif ev_type == "line.destroy" or ev_type == "line.delete":
+            line   = subject.get("line") or subject
+            msg_id = str(line.get("id") or subject.get("line_id") or
+                          subject.get("message_id") or "")
+            if msg_id and msg_id in self._bubble_map:
+                bubble = self._bubble_map.pop(msg_id)
+                parent = bubble.get_parent()
+                if parent is not None:
+                    parent.remove(bubble)
 
         elif ev_type in ("like.create", "like.delete",
                           "favorite.create", "favorite.destroy",
@@ -883,6 +1006,97 @@ class ChatView(Gtk.Box):
             return None
         return {"type": "mentions", "user_ids": user_ids, "loci": loci}
 
+    # ── In-conversation search ──
+    def toggle_search(self):
+        """Show/hide the chat search bar. Called by MainWindow's
+        Ctrl+F action."""
+        new_state = not self._search_bar.get_search_mode()
+        self._search_bar.set_search_mode(new_state)
+        if new_state:
+            self._search_entry.grab_focus()
+        else:
+            self._clear_search_highlights()
+
+    def _on_chat_search_changed(self, entry):
+        query = entry.get_text().strip().lower()
+        self._clear_search_highlights()
+        self._search_matches = []
+        if not query:
+            self._search_status.set_text("")
+            return
+        # Walk the message box in order; collect bubbles whose text
+        # contains the query, then highlight them.
+        child = self._msgs_box.get_first_child()
+        while child is not None:
+            if isinstance(child, MessageBubble):
+                text = (child.msg.get("text") or "").lower()
+                if query in text:
+                    child.add_css_class("search-match")
+                    self._search_matches.append(child)
+            child = child.get_next_sibling()
+        if not self._search_matches:
+            self._search_status.set_text("No matches")
+            return
+        # Jump to the most recent (last) match by default — matches the
+        # convention where the user is usually looking for something
+        # they recently saw.
+        self._search_index = len(self._search_matches) - 1
+        self._update_search_status()
+        self._scroll_to_bubble(self._search_matches[self._search_index])
+
+    def _chat_search_step(self, direction: int):
+        if not self._search_matches:
+            return
+        n = len(self._search_matches)
+        self._search_index = (self._search_index + direction) % n
+        self._update_search_status()
+        self._scroll_to_bubble(self._search_matches[self._search_index])
+
+    def _update_search_status(self):
+        n = len(self._search_matches)
+        if n == 0:
+            self._search_status.set_text("")
+        else:
+            self._search_status.set_text(
+                f"{self._search_index + 1} of {n}")
+
+    def _clear_search_highlights(self):
+        for b in self._search_matches:
+            try:
+                b.remove_css_class("search-match")
+            except Exception:
+                pass
+        self._search_matches = []
+        self._search_index   = 0
+        self._search_status.set_text("")
+
+    # ── Reply ──
+    def set_reply_target(self, msg: dict | None):
+        """Select a message to reply to (or pass None to clear). The
+        compose-bar preview updates and the next send will attach a
+        `reply` attachment pointing at it. Called by the message
+        bubble's context menu."""
+        self._reply_target = msg
+        if msg is None:
+            self._reply_bar.set_visible(False)
+            self._reply_label.set_text("")
+            return
+        sender = msg.get("name") or "Unknown"
+        body   = (msg.get("text") or "").strip()
+        if not body:
+            atts = msg.get("attachments") or []
+            if any(a.get("type") == "image" for a in atts):
+                body = "📷 Image"
+            elif atts:
+                body = "📎 Attachment"
+            else:
+                body = "…"
+        # Single-line preview; ellipsize handles overflow visually
+        self._reply_label.set_text(f"Replying to {sender}: {body}")
+        self._reply_bar.set_visible(True)
+        # Keyboard focus back to the entry so the user can just type
+        self._entry.grab_focus()
+
     def _clear_pending_mentions(self):
         buf = self._entry.get_buffer()
         for entry in self._pending_mentions:
@@ -942,6 +1156,15 @@ class ChatView(Gtk.Box):
             self._clear_attachment()
         if mentions_att:
             atts.append(mentions_att)
+        if self._reply_target is not None:
+            reply_id = str(self._reply_target.get("id", ""))
+            if reply_id:
+                atts.append({
+                    "type":          "reply",
+                    "reply_id":      reply_id,
+                    "base_reply_id": reply_id,
+                })
+            self.set_reply_target(None)
 
         def worker():
             if self._is_dm:

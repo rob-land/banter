@@ -7,7 +7,7 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import Gtk, Adw, GLib, Gdk, Pango
+from gi.repository import Gtk, Adw, GLib, Gdk, Gio, Pango
 
 from ..constants import DEBUG, esc, EMOJI_LOG
 from ..async_utils import run_in_background
@@ -131,6 +131,11 @@ class MessageBubble(Gtk.Box):
         self.win  = window
         self.me   = str(me_id)
         is_mine    = str(msg.get("user_id", "")) == self.me
+        self.is_mine = is_mine
+        # Labels with set_selectable(True) — checked on right-click to
+        # decide whether to show our context menu or the built-in
+        # text-selection menu (cut/copy/paste).
+        self._selectable_labels: list = []
 
         # Cache this sender's name so reaction tooltips can resolve it
         uid  = str(msg.get("user_id", ""))
@@ -162,6 +167,10 @@ class MessageBubble(Gtk.Box):
             tl.add_css_class("dim-label")
             tl.set_margin_start(4)
             hdr.append(tl)
+
+            self._edited_lbl = self._make_edited_label(msg)
+            if self._edited_lbl is not None:
+                hdr.append(self._edited_lbl)
 
             hdr.set_margin_start(4)
 
@@ -266,6 +275,7 @@ class MessageBubble(Gtk.Box):
             lbl = Gtk.Label(wrap=True)
             lbl.set_xalign(0)
             lbl.set_selectable(True)
+            self._selectable_labels.append(lbl)
             lbl.set_max_width_chars(self.MAX_TEXT_CHARS)
             # WORD_CHAR wrapping lets long URLs/unbreakable tokens break
             # mid-string instead of forcing the label to demand the full
@@ -316,11 +326,17 @@ class MessageBubble(Gtk.Box):
 
         # Timestamp (mine only, shown inside bubble)
         if is_mine:
+            ts_box = Gtk.Box(spacing=4)
+            ts_box.set_halign(Gtk.Align.END)
+            self._edited_lbl = self._make_edited_label(msg)
+            if self._edited_lbl is not None:
+                ts_box.append(self._edited_lbl)
             ts = msg.get("created_at", 0)
-            tl = Gtk.Label(label=datetime.fromtimestamp(ts).strftime("%-I:%M %p"))
+            tl = Gtk.Label(
+                label=datetime.fromtimestamp(ts).strftime("%-I:%M %p"))
             tl.add_css_class("dim-caption")
-            tl.set_halign(Gtk.Align.END)
-            bubble.append(tl)
+            ts_box.append(tl)
+            bubble.append(ts_box)
 
         if is_mine:
             row_box.append(spacer)
@@ -346,6 +362,26 @@ class MessageBubble(Gtk.Box):
         # Render initial state
         self._render_reactions(msg.get("reactions", []),
                                msg.get("favorited_by", []))
+
+        # ── Context menu (right-click + long-press) ────────────────────
+        # Lives on the inner bubble so taps on the avatar/header column
+        # don't trigger it. Reply / Copy work for any message; Edit /
+        # Delete only show on the user's own messages. The right-click
+        # gesture is in CAPTURE phase so it pre-empts the built-in
+        # context menu of any selectable child label — but the handler
+        # bows out (lets the default through) when text is currently
+        # selected, so the user can still right-click to copy a
+        # selected substring.
+        self._bubble_for_menu = bubble
+        rclick = Gtk.GestureClick()
+        rclick.set_button(3)
+        rclick.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        rclick.connect("pressed", self._on_menu_click)
+        bubble.add_controller(rclick)
+        long_press = Gtk.GestureLongPress()
+        long_press.set_touch_only(False)
+        long_press.connect("pressed", self._on_menu_long_press)
+        bubble.add_controller(long_press)
 
     # ── Reply quote ──
     def _set_quote(self, parent_msg):
@@ -630,6 +666,323 @@ class MessageBubble(Gtk.Box):
             updated_msg.get("reactions", []),
             updated_msg.get("favorited_by", [])
         )
+
+    @staticmethod
+    def _is_edited(msg: dict) -> bool:
+        """Return True if `msg` has been edited at least once. GroupMe
+        sets `updated_at` to the edit timestamp; for unedited messages
+        it equals or is missing relative to `created_at`."""
+        try:
+            updated = int(msg.get("updated_at") or 0)
+            created = int(msg.get("created_at") or 0)
+        except (TypeError, ValueError):
+            return False
+        # Allow 1-second jitter — GroupMe sometimes sets updated_at a
+        # second after created_at on send for unedited messages.
+        return updated > 0 and updated > created + 1
+
+    def _make_edited_label(self, msg: dict):
+        """Return a 'edited HH:MM' tag label if the message has been
+        edited, or None otherwise. Hover-tooltip shows the full date."""
+        if not self._is_edited(msg):
+            return None
+        try:
+            updated = int(msg.get("updated_at") or 0)
+            dt = datetime.fromtimestamp(updated)
+        except (TypeError, ValueError):
+            return None
+        lbl = Gtk.Label(label=f"edited {dt.strftime('%-I:%M %p')}")
+        lbl.add_css_class("dim-caption")
+        lbl.add_css_class("dim-label")
+        lbl.set_tooltip_text(
+            f"Last edited {dt.strftime('%a %b %-d, %-I:%M %p')}")
+        return lbl
+
+    def update_text_from(self, msg: dict):
+        """Replace the visible message text and edited-indicator from
+        a freshly-edited message dict. Called by ChatView when a
+        line.update push event arrives."""
+        self.msg.update(msg)
+        # Find and replace the existing text label inside the bubble.
+        # Cheaper to rebuild the label than to reach into pango.
+        bubble = self._bubble_for_menu
+        if bubble is None:
+            return
+        new_text = (msg.get("text") or "").strip()
+
+        # Replace any existing _selectable_labels[0] (the main text)
+        # with a fresh one. Other selectable labels (reply quote) are
+        # left intact.
+        old = self._selectable_labels[0] if self._selectable_labels else None
+        if old is not None and old.get_parent() is bubble:
+            mentions_att = next(
+                (a for a in self.msg.get("attachments", [])
+                 if a.get("type") == "mentions"),
+                None,
+            )
+            markup, use_markup = _build_text_markup(
+                new_text, mentions_att, is_mine=self.is_mine)
+            if use_markup:
+                old.set_markup(markup)
+            else:
+                old.set_text(new_text)
+
+        # Refresh the "(edited)" tag in-place.
+        new_lbl = self._make_edited_label(msg)
+        if hasattr(self, "_edited_lbl") and self._edited_lbl is not None:
+            parent = self._edited_lbl.get_parent()
+            if parent is not None:
+                parent.remove(self._edited_lbl)
+            self._edited_lbl = None
+        if new_lbl is not None:
+            # Insert into the same box as the timestamp — that varies
+            # for own vs others' messages. Walk the bubble's first
+            # children looking for the timestamp's parent.
+            self._edited_lbl = new_lbl
+            # Best-effort: append to the bubble; visual ordering is
+            # lost but the indicator is still visible.
+            bubble.append(new_lbl)
+
+    # ── Context menu ────────────────────────────────────────────────
+    def _on_menu_click(self, gesture, _n_press, x, y):
+        # If any selectable label currently has a selection, defer to
+        # the label's built-in context menu (which has Cut/Copy/Select
+        # All for the selection). Don't claim the gesture in CAPTURE
+        # phase — let it fall through to the default handler.
+        for lbl in self._selectable_labels:
+            try:
+                has_sel, _s, _e = lbl.get_selection_bounds()
+            except (TypeError, ValueError):
+                continue
+            if has_sel:
+                return
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        self._show_context_menu(x, y)
+
+    def _on_menu_long_press(self, gesture, x, y):
+        self._show_context_menu(x, y)
+
+    # GroupMe enforces a server-side time window for editing one's own
+    # messages. We'd hide the Edit menu past it so users don't see a
+    # confusing failure — but until we find the actual edit endpoint
+    # the entry is hidden unconditionally. See BACKLOG.md.
+    EDIT_WINDOW_SECS = 600   # 10 minutes
+    EDIT_ENABLED     = False
+
+    def _show_context_menu(self, x: float, y: float):
+        menu = Gio.Menu()
+        menu.append("Reply",     "bubble.reply")
+        menu.append("Copy text", "bubble.copy")
+        if self.is_mine:
+            if self.EDIT_ENABLED:
+                created = int(self.msg.get("created_at") or 0)
+                now     = int(datetime.now().timestamp())
+                if created and (now - created) <= self.EDIT_WINDOW_SECS:
+                    menu.append("Edit", "bubble.edit")
+            menu.append("Delete", "bubble.delete")
+
+        # Action group scoped to this bubble.
+        group = Gio.SimpleActionGroup()
+        for name, cb in (
+            ("reply",  self._action_reply),
+            ("copy",   self._action_copy),
+            ("edit",   self._action_edit),
+            ("delete", self._action_delete),
+        ):
+            act = Gio.SimpleAction.new(name, None)
+            act.connect("activate", cb)
+            group.add_action(act)
+        self._bubble_for_menu.insert_action_group("bubble", group)
+
+        popover = Gtk.PopoverMenu.new_from_model(menu)
+        popover.set_parent(self._bubble_for_menu)
+        rect = Gdk.Rectangle()
+        rect.x, rect.y, rect.width, rect.height = int(x), int(y), 1, 1
+        popover.set_pointing_to(rect)
+        popover.set_has_arrow(False)
+        popover.popup()
+
+    def _action_reply(self, *_):
+        chat_view = getattr(self.win, "_chat_view", None)
+        if chat_view is not None:
+            chat_view.set_reply_target(self.msg)
+
+    def _action_copy(self, *_):
+        text = self.msg.get("text") or ""
+        if not text:
+            return
+        clipboard = self.get_clipboard()
+        clipboard.set(text)
+        try:
+            self.win.toast("Copied to clipboard")
+        except Exception:
+            pass
+
+    def _action_edit(self, *_):
+        EditMessageDialog(self).present(self.win)
+
+    def _action_delete(self, *_):
+        msg = Adw.MessageDialog(
+            transient_for=self.win,
+            heading="Delete message?",
+            body="This cannot be undone.",
+        )
+        msg.add_response("cancel", "Cancel")
+        msg.add_response("delete", "Delete")
+        msg.set_response_appearance(
+            "delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        msg.set_default_response("cancel")
+        msg.set_close_response("cancel")
+
+        def on_response(_dlg, resp):
+            if resp != "delete":
+                return
+            self._do_delete()
+        msg.connect("response", on_response)
+        msg.present()
+
+    def _do_delete(self):
+        conv_id = self._conversation_id()
+        mid     = str(self.msg.get("id"))
+
+        def worker():
+            return self.api.delete_message(conv_id, mid)
+
+        def on_done(ok):
+            if ok:
+                # Remove from chat view's bubble map and from the box
+                cv = getattr(self.win, "_chat_view", None)
+                if cv is not None and mid in getattr(cv, "_bubble_map", {}):
+                    cv._bubble_map.pop(mid, None)
+                parent = self.get_parent()
+                if parent is not None:
+                    parent.remove(self)
+                try:
+                    self.win.toast("Message deleted")
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.win.toast("Failed to delete message")
+                except Exception:
+                    pass
+
+        run_in_background(worker, on_done)
+
+    def _conversation_id(self) -> str:
+        """Compute the API conversation_id for edit/delete. For groups
+        this is the group_id; for DMs GroupMe uses '<a>+<b>' with the
+        two participant ids sorted as integers (smaller first)."""
+        cv = getattr(self.win, "_chat_view", None)
+        is_dm = bool(cv and getattr(cv, "_is_dm", False))
+        if not is_dm:
+            return str(self.gid)
+        try:
+            a = int(self.me)
+            b = int(getattr(cv, "_other_uid", 0) or 0)
+        except (TypeError, ValueError):
+            return f"{self.me}+{getattr(cv, '_other_uid', '')}"
+        lo, hi = (a, b) if a < b else (b, a)
+        return f"{lo}+{hi}"
+
+
+class EditMessageDialog(Adw.Dialog):
+    """Inline editor for a sent message. PUTs the new text on save and
+    invokes the bubble's refresh() with the server response."""
+
+    def __init__(self, bubble: MessageBubble):
+        super().__init__()
+        self._bubble = bubble
+        self._in_flight = False
+        self.set_title("Edit message")
+        self.set_content_width(420)
+
+        tv = Adw.ToolbarView()
+        hdr = Adw.HeaderBar()
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda *_: self.close())
+        hdr.pack_start(cancel_btn)
+        self._save_btn = Gtk.Button(label="Save")
+        self._save_btn.add_css_class("suggested-action")
+        self._save_btn.connect("clicked", self._save)
+        hdr.pack_end(self._save_btn)
+        tv.add_top_bar(hdr)
+
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        body.set_margin_top(12)
+        body.set_margin_bottom(12)
+        body.set_margin_start(12)
+        body.set_margin_end(12)
+
+        self._tv = Gtk.TextView()
+        self._tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self._tv.set_pixels_above_lines(4)
+        self._tv.set_pixels_below_lines(4)
+        self._tv.get_buffer().set_text(bubble.msg.get("text") or "")
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_child(self._tv)
+        scroll.set_min_content_height(120)
+        scroll.set_max_content_height(360)
+        scroll.set_hexpand(True)
+        scroll.set_vexpand(True)
+        body.append(scroll)
+        tv.set_content(body)
+        self.set_child(tv)
+
+    def _save(self, *_):
+        if self._in_flight:
+            return
+        buf  = self._tv.get_buffer()
+        text = buf.get_text(buf.get_start_iter(),
+                              buf.get_end_iter(), False).strip()
+        if not text:
+            return
+        bubble  = self._bubble
+        conv_id = bubble._conversation_id()
+        mid     = str(bubble.msg.get("id"))
+
+        # Lock the button + dialog while the request is in flight so
+        # repeated clicks don't fan out into a wall of duplicate POSTs.
+        self._in_flight = True
+        self._save_btn.set_sensitive(False)
+        self._save_btn.set_label("Saving…")
+
+        def worker():
+            return bubble.api.edit_message(conv_id, mid, text)
+
+        def on_done(updated):
+            self._in_flight = False
+            if updated:
+                # Stamp updated_at so the (edited) indicator shows
+                # immediately — server response may be sparse.
+                edited_msg = dict(bubble.msg)
+                edited_msg["text"]       = text
+                edited_msg["updated_at"] = int(
+                    datetime.now().timestamp())
+                if isinstance(updated, dict):
+                    edited_msg.update({k: v for k, v in updated.items()
+                                       if v is not None})
+                bubble.update_text_from(edited_msg)
+                try:
+                    bubble.win.toast("Message updated")
+                except Exception:
+                    pass
+                self.close()
+            else:
+                # Re-enable so the user can cancel, but DON'T offer to
+                # retry — the failure isn't transient, the endpoint is
+                # missing. See api.edit_message docstring.
+                self._save_btn.set_label("Save")
+                self._save_btn.set_sensitive(True)
+                try:
+                    bubble.win.toast(
+                        "GroupMe rejected the edit "
+                        "(API not available — see backlog)")
+                except Exception:
+                    pass
+
+        run_in_background(worker, on_done)
 
 
 # ─────────────────────────── Chat View ───────────────────────────

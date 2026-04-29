@@ -2,6 +2,27 @@
 
 Things deferred for later. Not a bug tracker — notes to self.
 
+## Editing messages — endpoint unknown
+
+**Status:** deferred. UI is wired up but `MessageBubble.EDIT_ENABLED = False`, so the menu entry is hidden.
+
+The right-click / long-press menu has Reply / Copy / Delete working; Edit was added at the same time but every URL/method we've tried for it returns a Rails-style 500 HTML page (which means the route isn't registered — not a malformed body):
+
+| Method | URL                                                     | Result |
+|--------|----------------------------------------------------------|--------|
+| `PUT`   | `/v3/conversations/{cid}/messages/{mid}`                 | 500 HTML |
+| `POST`  | `https://v2.groupme.com/messages/{cid}/{mid}`            | 500 HTML |
+| `PATCH` | `/v3/conversations/{cid}/messages/{mid}`                 | 500 HTML |
+| `POST`  | `/v3/groups/{gid}/messages/{mid}/edit`                   | 500 HTML |
+
+`DELETE /v3/conversations/{cid}/messages/{mid}` works — so that path *exists* — but it only seems to accept DELETE.
+
+**To fix:** open the GroupMe Web client (web.groupme.com) in a browser with devtools, edit a message in a group, capture the actual URL, method, headers, and body. Drop the result into `api.edit_message`. The fallback list in the function makes it easy to add a new candidate.
+
+The official mobile clients have a server-enforced edit window (~10 minutes), so once the endpoint is wired up we'd want `MessageBubble.EDIT_WINDOW_SECS` to gate the menu entry by `now - created_at`.
+
+---
+
 ## Pack picker doesn't match the official GroupMe client
 
 **Status:** deferred, cosmetic.

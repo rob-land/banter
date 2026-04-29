@@ -53,6 +53,11 @@ class GroupMeAPI:
             with urllib.request.urlopen(req, body, timeout=30) as r:
                 raw = r.read().decode()
                 dbg("← %d  %d bytes", r.status, len(raw))
+                # DELETE and some other endpoints return 204 No Content
+                # with an empty body — synthesize a meta wrapper so
+                # callers can use the usual _ok() / response shape.
+                if not raw.strip():
+                    return {"meta": {"code": r.status}, "response": None}
                 parsed = json.loads(raw)
                 if DEBUG:
                     code = parsed.get("meta", {}).get("code", "?")
@@ -77,7 +82,7 @@ class GroupMeAPI:
             return {"meta": {"code": 0, "errors": [str(e)]}}
 
     def _ok(self, r):
-        return r.get("meta", {}).get("code") in (200, 201)
+        return r.get("meta", {}).get("code") in (200, 201, 204)
 
     # ── auth / user ──
     def verify_token(self, token: str):
@@ -202,6 +207,50 @@ class GroupMeAPI:
             msg["attachments"] = attachments
         r = self._req("POST", f"/groups/{gid}/messages", {"message": msg})
         return r.get("response", {}).get("message")
+
+    def edit_message(self, conv_id, msg_id, text: str, attachments=None):
+        """Edit an existing message.
+
+        STATUS: GroupMe's public v3 API doesn't expose a documented
+        edit endpoint, and every URL/method combo we've tried so far
+        returns an HTML 500 page (Rails missing-route style, not a
+        4xx with JSON — meaning the route isn't registered, not that
+        the request is malformed). Until we can capture the official
+        web client's actual edit request and replicate it, this
+        always returns None and the UI surfaces "Edit not supported".
+
+        Tried (all 500 HTML):
+          - PUT  /v3/conversations/{cid}/messages/{mid}     {"message": {...}}
+          - POST https://v2.groupme.com/messages/{cid}/{mid} {"message": {...}}
+          - PATCH /v3/conversations/{cid}/messages/{mid}    {"message": {...}}
+          - POST /v3/groups/{gid}/messages/{mid}/edit       {"message": {...}}
+        """
+        msg = {"text": text}
+        if attachments is not None:
+            msg["attachments"] = attachments
+
+        attempts = (
+            ("POST",  f"/messages/{conv_id}/{msg_id}",
+                {"message": msg}, "https://v2.groupme.com"),
+            ("PUT",   f"/conversations/{conv_id}/messages/{msg_id}",
+                {"message": msg}, None),
+            ("PATCH", f"/conversations/{conv_id}/messages/{msg_id}",
+                {"message": msg}, None),
+            ("POST",  f"/groups/{conv_id}/messages/{msg_id}/edit",
+                {"message": msg}, None),
+        )
+        for method, path, body, base in attempts:
+            r = self._req(method, path, body, base=base)
+            if self._ok(r):
+                return r.get("response", {}).get("message") or {"text": text}
+        return None
+
+    def delete_message(self, conv_id, msg_id):
+        """Delete a message. Same `conv_id` semantics as edit_message.
+        Returns True on success."""
+        r = self._req("DELETE",
+                       f"/conversations/{conv_id}/messages/{msg_id}")
+        return self._ok(r)
 
     def like_message(self, gid, msg_id):
         r = self._req("POST", f"/messages/{gid}/{msg_id}/like")

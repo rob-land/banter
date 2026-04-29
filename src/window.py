@@ -49,6 +49,12 @@ class MainWindow(Adw.ApplicationWindow):
         # mix string and tuple keys here.
         self._rows         : dict = {}   # tuple → ConversationRow
         self._last_msg_ids : dict = {}   # tuple → last message id seen
+        # Per-conversation compose drafts. Keyed by _conv_key tuple. The
+        # active ChatView writes its current entry text here when it
+        # stops (chat switch / window close), and a new ChatView reads
+        # the value from here on construction. In-memory only — drafts
+        # don't persist across app restarts.
+        self._drafts       : dict = {}
         self._bg_poll_id   = None
         self._push         = None   # singleton GroupMePush for the whole session
 
@@ -595,6 +601,13 @@ class MainWindow(Adw.ApplicationWindow):
         menu_btn.set_menu_model(grp_menu)
         hdr.pack_end(menu_btn)
 
+        # Search-in-conversation toggle (also bound to Ctrl+F).
+        find_btn = Gtk.Button(icon_name="system-search-symbolic")
+        find_btn.add_css_class("flat")
+        find_btn.set_tooltip_text("Search this chat (Ctrl+F)")
+        find_btn.set_action_name("win.find")
+        hdr.pack_end(find_btn)
+
         self._content_nav.set_title(esc(group.get("name","Group")))
         self._content_wrap.append(hdr)
 
@@ -678,6 +691,12 @@ class MainWindow(Adw.ApplicationWindow):
         tl.set_max_width_chars(22)
         tw.append(tl)
         hdr.set_title_widget(tw)
+
+        find_btn = Gtk.Button(icon_name="system-search-symbolic")
+        find_btn.add_css_class("flat")
+        find_btn.set_tooltip_text("Search this chat (Ctrl+F)")
+        find_btn.set_action_name("win.find")
+        hdr.pack_end(find_btn)
 
         self._content_nav.set_title(esc(name))
         self._content_wrap.append(hdr)
@@ -1046,6 +1065,16 @@ class MainWindow(Adw.ApplicationWindow):
         pref_act = Gio.SimpleAction.new("preferences", None)
         pref_act.connect("activate", self._open_preferences)
         app.add_action(pref_act)
+
+        # Ctrl+F: toggle the active chat view's search bar.
+        find_act = Gio.SimpleAction.new("find", None)
+        find_act.connect("activate", self._on_find)
+        self.add_action(find_act)
+        app.set_accels_for_action("win.find", ["<Control>f"])
+
+    def _on_find(self, *_):
+        if self._chat_view is not None:
+            self._chat_view.toggle_search()
 
     def _sign_out(self, *_):
         self._stop_bg_poll()

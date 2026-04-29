@@ -17,6 +17,12 @@ APP_CSS = """
     background-color: @card_bg_color;
     border-bottom-left-radius: 4px;
 }
+/* In-conversation search: bubbles whose text contains the active query
+ * are wrapped in a subtle yellow tint so the matched messages stand
+ * out at a glance while scrolling through results. */
+.search-match .msg-bubble {
+    box-shadow: inset 0 0 0 2px alpha(#f5c211, 0.85);
+}
 
 /* ── Reaction pills ── */
 .reaction-pill {
