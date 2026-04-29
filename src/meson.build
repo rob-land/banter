@@ -36,6 +36,7 @@ widget_sources = files(
   'widgets/chat_view.py',
   'widgets/conversation_row.py',
   'widgets/event_card.py',
+  'widgets/mention_popover.py',
   'widgets/message_bubble.py',
   'widgets/misc.py',
   'widgets/reactions_sheet.py',

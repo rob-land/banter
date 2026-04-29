@@ -47,6 +47,71 @@ def _linkify(text: str) -> tuple:
     return ("".join(out), True)
 
 
+def _mention_ranges(mentions_att, text_len):
+    """Return a sorted, merged list of (start, end) for the mention loci
+    in `mentions_att`, clamped to `text_len`. Defensive against bad
+    input."""
+    if not mentions_att:
+        return []
+    raw = mentions_att.get("loci") or []
+    out = []
+    for entry in raw:
+        try:
+            s, l = int(entry[0]), int(entry[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if l <= 0 or s < 0 or s >= text_len:
+            continue
+        out.append((s, min(s + l, text_len)))
+    out.sort()
+    # Merge overlaps so we don't emit nested <span> tags
+    merged = []
+    for r in out:
+        if merged and r[0] <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], r[1]))
+        else:
+            merged.append(r)
+    return merged
+
+
+def _build_text_markup(text: str, mentions_att, is_mine: bool = False) -> tuple:
+    """Return (pango_markup, use_markup) for `text`, applying both URL
+    linkification and mention highlighting. Mention spans are rendered
+    as bold runs; URLs in non-mention regions are still turned into
+    clickable links.
+
+    On outgoing (own) bubbles, the bubble background is the libadwaita
+    accent color — the same blue we'd use for mentions on other
+    bubbles. So we render mentions on our own bubbles in white +
+    underline to keep them visible against the accent background."""
+    ranges = _mention_ranges(mentions_att, len(text))
+    if not ranges:
+        return _linkify(text)
+
+    if is_mine:
+        open_tag = '<span weight="bold" underline="single">'
+    else:
+        open_tag = '<span weight="bold" foreground="#3584e4">'
+
+    parts  = []
+    cursor = 0
+    for s, e in ranges:
+        if cursor < s:
+            seg_markup, _ = _linkify(text[cursor:s])
+            parts.append(seg_markup)
+        mention_text = text[s:e]
+        escaped = (mention_text
+                   .replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;"))
+        parts.append(f'{open_tag}{escaped}</span>')
+        cursor = e
+    if cursor < len(text):
+        seg_markup, _ = _linkify(text[cursor:])
+        parts.append(seg_markup)
+    return ("".join(parts), True)
+
+
 
 class MessageBubble(Gtk.Box):
     # Layout tunables — class-level so a future style pass can adjust
@@ -191,7 +256,13 @@ class MessageBubble(Gtk.Box):
                     used_mixed_text = True
 
         if text and not used_mixed_text:
-            markup, has_links = _linkify(text)
+            mentions_att = next(
+                (a for a in msg.get("attachments", [])
+                 if a.get("type") == "mentions"),
+                None,
+            )
+            markup, use_markup = _build_text_markup(
+                text, mentions_att, is_mine=is_mine)
             lbl = Gtk.Label(wrap=True)
             lbl.set_xalign(0)
             lbl.set_selectable(True)
@@ -201,11 +272,11 @@ class MessageBubble(Gtk.Box):
             # content width. This is what prevents the "header disappears"
             # bug without collapsing the bubble to 1px.
             lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-            if has_links:
+            if use_markup:
                 # Use markup so <a href> links are rendered as clickable
+                # and mention runs are highlighted.
                 lbl.set_markup(markup)
                 lbl.set_use_markup(True)
-                # GTK label handles link activation natively when use_markup=True
             else:
                 lbl.set_text(text)
             bubble.append(lbl)
