@@ -682,8 +682,12 @@ class ChatView(Gtk.Box):
         return True
 
     # ── Jump to date ──
-    JUMP_BATCH_SIZE = 30
-    JUMP_MAX_BATCHES = 20   # ~600 messages of backfill before giving up
+    # 100 is the largest limit GroupMe accepts; the web client uses it.
+    # 100 × 100 = 10k messages of backfill, which covers many months of
+    # even a very active group. If the target is still further back the
+    # user gets a clear toast and can re-trigger to continue.
+    JUMP_BATCH_SIZE = 100
+    JUMP_MAX_BATCHES = 100
 
     def jump_to_date(self, target):
         """Scroll the conversation back to messages from `target` (a
@@ -694,7 +698,7 @@ class ChatView(Gtk.Box):
         message in a batch is on or before `target`, then prepend the
         whole window in one shot and scroll to the first bubble that
         falls on or after the target date. Bounded by JUMP_MAX_BATCHES
-        so a deep history doesn't spin the worker indefinitely."""
+        so a runaway worker can't loop indefinitely."""
         if self._loading:
             self._win.toast("Already loading messages — try again in a sec")
             return
@@ -722,42 +726,68 @@ class ChatView(Gtk.Box):
 
         def worker():
             collected = []   # newest-first, accumulated across batches
+            found_target = False
+            exhausted    = False
             for _ in range(self.JUMP_MAX_BATCHES):
-                if not cur_oldest:
+                before_id = (collected[-1]["id"] if collected
+                             else cur_oldest)
+                if not before_id:
+                    exhausted = True
                     break
                 if is_dm:
                     msgs = self._api.get_dm_messages(
-                        other_uid, before_id=collected[-1]["id"]
-                        if collected else cur_oldest,
+                        other_uid, before_id=before_id,
                         limit=self.JUMP_BATCH_SIZE)
                 else:
                     msgs = self._api.get_messages(
-                        gid, before_id=collected[-1]["id"]
-                        if collected else cur_oldest,
+                        gid, before_id=before_id,
                         limit=self.JUMP_BATCH_SIZE)
                 if not msgs:
+                    exhausted = True
                     break
                 collected.extend(msgs)
                 if int(msgs[-1].get("created_at", 0)) <= target_unix:
+                    found_target = True
                     break
-            GLib.idle_add(self._on_jump_loaded, collected, target)
+            GLib.idle_add(self._on_jump_loaded, collected, target,
+                          found_target, exhausted)
 
         run_in_background(worker)
 
-    def _on_jump_loaded(self, msgs, target):
+    def _on_jump_loaded(self, msgs, target, found_target, exhausted):
         # _prepend_old expects newest-first, sets _loading=False at the
         # top, and takes care of date-separator boundaries.
         self._prepend_old(msgs)
         bubble = self._find_bubble_at_or_after(target)
         if bubble is not None:
             self._scroll_to_bubble(bubble)
-        else:
+
+        # Tell the user what actually happened — silent jumps that land
+        # weeks short of the requested date are confusing.
+        if found_target:
+            return   # target reached; no toast needed
+        if exhausted and msgs:
+            oldest_dt = datetime.fromtimestamp(
+                int(msgs[-1].get("created_at", 0))).date()
             try:
                 self._win.toast(
-                    f"No messages found on or after "
-                    f"{target.strftime('%b %-d, %Y')}")
-            except Exception:
-                pass
+                    f"Reached start of conversation at "
+                    f"{oldest_dt.strftime('%b %-d, %Y')}")
+            except Exception: pass
+        elif exhausted and not msgs:
+            try:
+                self._win.toast("No older messages found")
+            except Exception: pass
+        else:
+            # Hit the batch cap without reaching the date. Tell the
+            # user where we got to so they know to jump again.
+            oldest_dt = datetime.fromtimestamp(
+                int(msgs[-1].get("created_at", 0))).date() if msgs else target
+            try:
+                self._win.toast(
+                    f"Loaded back to {oldest_dt.strftime('%b %-d, %Y')} — "
+                    f"jump again to keep going")
+            except Exception: pass
 
     def _is_bubble_on_date(self, bubble, target) -> bool:
         try:
