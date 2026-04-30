@@ -342,8 +342,60 @@ Different host, no JSON wrapper, raw image body. Response:
 Use the returned URL as an `attachments: [{"type":"image", "url": ...}]`
 entry on a subsequent send/edit.
 
-**Non-image file attachments** are gated behind a separate upload flow
-that's not in the public docs. Not yet supported by Banter.
+### File upload (non-image attachments, undocumented)
+
+Recovered 2026-04-30. Lives at `file.groupme.com` and requires a
+three-step flow.
+
+**1. Upload the bytes:**
+```
+POST https://file.groupme.com/v1/{gid}/files?name=<urlencoded filename>
+Content-Type: <file mime>
+X-Access-Token: <token>
+X-Requested-With: GroupMeWeb/1.2.3
+
+<raw bytes>
+```
+Returns 201 + JSON containing `file_id` (and/or `status_url`). The
+`file_id` doubles as the upload job id.
+
+**2. Poll completion:**
+```
+GET https://file.groupme.com/v1/{gid}/uploadStatus?job=<file_id>&cnt=<N>
+```
+`cnt` is a 0-indexed counter the web client increments per poll.
+Returns `{"status": "completed", "file_id": "..."}` when ready.
+
+**3. Send the message** via the standard `POST /v3/groups/{gid}/messages`
+with the attachment:
+```json
+{"type": "file", "file_id": "<uuid>"}
+```
+
+**Resolve metadata for received files:**
+```
+POST https://file.groupme.com/v1/{gid}/fileData
+Content-Type: application/json
+
+{"file_ids": ["<uuid>", ...]}
+```
+Returns:
+```json
+[{"file_id": "<uuid>", "meta": 200,
+  "file_data": {"file_name": "...", "file_size": <bytes>, "mime_type": "..."}}]
+```
+
+The message attachment itself only carries `file_id` — `file_name`,
+`file_size`, and `mime_type` must be fetched separately. Banter calls
+this lazily from `FileAttachment._fetch_metadata`.
+
+**Download URL — unverified.** No click-to-download capture; Banter's
+best guess is `GET .../v1/{gid}/files/{file_id}?token=<token>`. Update
+if downloads stop working.
+
+**DM equivalent — unverified.** The upload URL bakes in `{group_id}`;
+the DM form (`<lo>+<hi>`? `other_user_id`?) isn't captured. Banter
+toasts in DMs and routes only image attachments there.
 
 ---
 
@@ -483,9 +535,10 @@ Faye channels:
 
 ## What's deliberately not implemented
 
-* **Non-image file attachments** — separate upload flow, not in public
-  docs, low priority.
 * **DM typing indicators** — channel format unverified.
+* **DM file uploads** — upload URL pattern for DMs unverified.
+* **File download URL** — actual endpoint pattern unverified; current
+  best-guess is `GET .../v1/{gid}/files/{file_id}?token=<...>`.
 * **GIF picker** — would use Tenor/Giphy directly, not GroupMe.
 * **Pin events on push** — server doesn't seem to emit them; pin state
   refetched on demand.

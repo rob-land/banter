@@ -1,5 +1,6 @@
 """Banter — ChatView: message list + compose bar."""
 
+import mimetypes
 import time
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +49,11 @@ class ChatView(Gtk.Box):
         self._newest_date = None
         self._loading     = False
         self._pending_img_url = None
+        # Pending non-image file attachment. Filled in by _set_pending_file
+        # after upload completes; _send turns this into a {type:file,file_id}
+        # attachment and clears it.
+        self._pending_file_id   = None
+        self._pending_file_name = None
         self._poll_id    = None
         # Maps message id → MessageBubble widget for in-place refresh
         self._bubble_map : dict = {}
@@ -282,9 +288,9 @@ class ChatView(Gtk.Box):
         attach_btn = Gtk.Button(icon_name="mail-attachment-symbolic")
         attach_btn.add_css_class("flat")
         attach_btn.add_css_class("compose-btn")
-        attach_btn.set_tooltip_text("Attach image")
+        attach_btn.set_tooltip_text("Attach file or image")
         attach_btn.set_valign(Gtk.Align.END)
-        attach_btn.connect("clicked", self._pick_image)
+        attach_btn.connect("clicked", self._pick_attachment)
         compose.append(attach_btn)
 
         self._entry = Gtk.TextView()
@@ -1330,7 +1336,7 @@ class ChatView(Gtk.Box):
             buf.get_start_iter(), buf.get_end_iter(), False)
         text     = raw_text.strip()
 
-        if not text and not self._pending_img_url:
+        if not text and not self._pending_img_url and not self._pending_file_id:
             return
 
         # Build the mentions attachment from pending marks BEFORE we
@@ -1345,6 +1351,9 @@ class ChatView(Gtk.Box):
         atts = []
         if self._pending_img_url:
             atts.append({"type": "image", "url": self._pending_img_url})
+            self._clear_attachment()
+        elif self._pending_file_id:
+            atts.append({"type": "file", "file_id": self._pending_file_id})
             self._clear_attachment()
         if mentions_att:
             atts.append(mentions_att)
@@ -1379,49 +1388,79 @@ class ChatView(Gtk.Box):
             self._newest_id = msg["id"]
         self._scroll_bottom()
 
-    # ── Image attach ──
-    def _pick_image(self, *_):
+    # ── Attachments (image / file) ──
+    def _pick_attachment(self, *_):
+        """Open the system file picker. Picked files are routed by MIME
+        type: images via the existing image-upload path (rendered inline
+        on receivers), everything else via the file-upload path
+        (rendered as a download link). DMs are image-only — the file
+        endpoint URL is /v1/{group_id}/files; the DM equivalent hasn't
+        been captured."""
         fd = Gtk.FileDialog()
-        fd.set_title("Attach Image")
+        fd.set_title("Attach file")
+        fd.open(self._win, None, self._on_attachment_picked)
 
-        ff = Gtk.FileFilter()
-        ff.set_name("Images")
-        for mime in ("image/jpeg", "image/png",
-                     "image/gif", "image/webp"):
-            ff.add_mime_type(mime)
-        store = Gio.ListStore.new(Gtk.FileFilter)
-        store.append(ff)
-        fd.set_filters(store)
-        fd.open(self._win, None, self._on_image_picked)
-
-    def _on_image_picked(self, fd, result):
+    def _on_attachment_picked(self, fd, result):
         try:
             f    = fd.open_finish(result)
             path = f.get_path()
         except GLib.Error:
             return
 
-        self._win.toast("Uploading image…")
+        mime, _ = mimetypes.guess_type(path)
+        is_image = bool(mime and mime.startswith("image/"))
 
+        if is_image:
+            self._win.toast("Uploading image…")
+            def worker():
+                url = self._api.upload_image(path)
+                if url:
+                    GLib.idle_add(self._set_pending_image, url,
+                                   Path(path).name)
+                else:
+                    GLib.idle_add(lambda: self._win.toast(
+                        "Image upload failed"))
+            run_in_background(worker)
+            return
+
+        # Non-image: file attachment. DMs aren't supported (URL format
+        # unverified) — surface a toast rather than failing silently.
+        if self._is_dm:
+            self._win.toast("File attachments aren't supported in DMs yet")
+            return
+
+        self._win.toast("Uploading file…")
+        gid = self._gid
+        name = Path(path).name
         def worker():
-            url = self._api.upload_image(path)
-            if url:
-                GLib.idle_add(self._set_pending, url,
-                               Path(path).name)
+            file_id = self._api.upload_file(gid, path)
+            if file_id:
+                GLib.idle_add(self._set_pending_file, file_id, name)
             else:
                 GLib.idle_add(lambda: self._win.toast(
-                    "Image upload failed"))
-
+                    "File upload failed"))
         run_in_background(worker)
 
-    def _set_pending(self, url, name):
-        self._pending_img_url = url
+    def _set_pending_image(self, url, name):
+        self._pending_img_url   = url
+        self._pending_file_id   = None
+        self._pending_file_name = None
         self._preview_label.set_text(name)
         self._preview_bar.set_visible(True)
         self._win.toast("Image ready – press send")
 
+    def _set_pending_file(self, file_id, name):
+        self._pending_file_id   = file_id
+        self._pending_file_name = name
+        self._pending_img_url   = None
+        self._preview_label.set_text(f"📎  {name}")
+        self._preview_bar.set_visible(True)
+        self._win.toast("File ready – press send")
+
     def _clear_attachment(self, *_):
-        self._pending_img_url = None
+        self._pending_img_url   = None
+        self._pending_file_id   = None
+        self._pending_file_name = None
         self._preview_bar.set_visible(False)
 
 

@@ -58,6 +58,7 @@ GROUPME_API      = "https://api.groupme.com/v3"
 GROUPME_IMAGE    = "https://image.groupme.com"
 GROUPME_PUSH     = "https://push.groupme.com/faye"
 GROUPME_POWERUPS = "https://powerup.groupme.com"
+GROUPME_FILE     = "https://file.groupme.com"
 
 # ── OAuth ────────────────────────────────────────────────────────────
 OAUTH_PORT          = 7654

@@ -13,7 +13,7 @@ from ..constants import DEBUG, esc, EMOJI_LOG
 from ..async_utils import run_in_background
 from ..api import GroupMeAPI
 from ..helpers import set_avatar_from_url, set_pack_emoji
-from .misc import ImageAttachment
+from .misc import ImageAttachment, FileAttachment
 from .event_card import EventCard
 
 # ── URL / email linkification ─────────────────────────────────────────
@@ -303,6 +303,11 @@ class MessageBubble(Gtk.Box):
             if kind == "image":
                 img = ImageAttachment(att["url"], window)
                 bubble.append(img)
+            elif kind == "file":
+                fid = att.get("file_id")
+                if fid:
+                    bubble.append(FileAttachment(
+                        fid, group_id, api, window))
             elif kind == "location":
                 loc = Gtk.Label(
                     label=f"📍 {att.get('name','Location')}"

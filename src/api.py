@@ -1,6 +1,7 @@
 """Banter — GroupMe REST API client."""
 
 import json
+import mimetypes
 import time
 import urllib.request
 from pathlib import Path
@@ -8,7 +9,8 @@ import urllib.parse
 import urllib.error
 
 from .constants import (
-    GROUPME_API, GROUPME_IMAGE, GROUPME_POWERUPS, APP_VERSION, DEBUG, dbg, log
+    GROUPME_API, GROUPME_IMAGE, GROUPME_POWERUPS, GROUPME_FILE,
+    APP_VERSION, DEBUG, dbg, log
 )
 
 
@@ -560,6 +562,187 @@ class GroupMeAPI:
             dbg("upload_image: exception %s", e)
             log.exception("Image upload exception")
             return None
+
+    # ── file upload (non-image attachments) ──
+    #
+    # Recovered from web.groupme.com (2026-04-30). Three steps:
+    #   1. POST file.groupme.com/v1/{gid}/files?name=<urlencoded>
+    #      — raw bytes, Content-Type set to the file's MIME type.
+    #      Server returns a JSON envelope with the file_id (which
+    #      doubles as the upload job id).
+    #   2. GET .../uploadStatus?job=<file_id>&cnt=N  — poll until
+    #      `status == "completed"`. cnt is a sequential 0,1,2…
+    #      counter the web client increments per poll.
+    #   3. Caller attaches `{type:"file", file_id:<id>}` to a message
+    #      body and POSTs it via the standard /groups/{gid}/messages.
+    #
+    # The metadata (file_name / file_size / mime_type) is fetched
+    # separately from the receive side via `get_file_data` — the
+    # message attachment itself only carries the id.
+
+    UPLOAD_POLL_INTERVAL_S = 1.0
+    UPLOAD_POLL_TIMEOUT_S  = 60   # ~60 polls; web client allows much longer
+
+    def upload_file(self, gid: str, file_path: str):
+        """Upload a non-image file to a group's file store. Returns the
+        file_id on success, or None on any failure. Blocking — call
+        from a worker thread."""
+        path = Path(file_path)
+        name = path.name
+        # Best-effort MIME guess; default to octet-stream which the
+        # server accepts for arbitrary binaries.
+        mime, _ = mimetypes.guess_type(str(path))
+        mime    = mime or "application/octet-stream"
+
+        try:
+            data = path.read_bytes()
+        except Exception as e:
+            dbg("upload_file: read failed %s: %s", file_path, e)
+            return None
+
+        url = (f"{GROUPME_FILE}/v1/{gid}/files"
+               f"?name={urllib.parse.quote(name)}")
+        dbg("upload_file: %s  mime=%s  bytes=%d", name, mime, len(data))
+
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type",     mime)
+        req.add_header("X-Access-Token",   self.token or "")
+        req.add_header("X-Requested-With", "GroupMeWeb/1.2.3")
+        req.add_header("User-Agent",       f"GroupMe-GNOME/{APP_VERSION}")
+
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                raw = resp.read().decode()
+                dbg("upload_file: post→ %d  body=%s",
+                    resp.status, raw[:300])
+        except urllib.error.HTTPError as e:
+            try:
+                err_body = e.read().decode()[:200]
+            except Exception:
+                err_body = ""
+            dbg("upload_file: HTTP %d  %s", e.code, err_body)
+            return None
+        except Exception as e:
+            dbg("upload_file: exception %s", e)
+            return None
+
+        # Server response shape (recovered): {"status_url": "...", "file_id": "..."}
+        # We try each common key, then fall back to parsing job= out of
+        # status_url.
+        try:
+            payload = json.loads(raw) if raw.strip() else {}
+        except Exception:
+            payload = {}
+        file_id = (payload.get("file_id") or
+                   payload.get("job_id")   or "")
+        status_url = payload.get("status_url") or ""
+        if not file_id and status_url:
+            try:
+                qs = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(status_url).query)
+                file_id = (qs.get("job") or [""])[0]
+            except Exception:
+                file_id = ""
+        if not file_id:
+            dbg("upload_file: could not extract file_id from %s", payload)
+            return None
+
+        # Step 2: poll until completed.
+        if not status_url:
+            status_url = (f"{GROUPME_FILE}/v1/{gid}/uploadStatus"
+                          f"?job={file_id}")
+
+        deadline = time.time() + self.UPLOAD_POLL_TIMEOUT_S
+        cnt = 0
+        while time.time() < deadline:
+            poll_url = f"{status_url}&cnt={cnt}" \
+                if "cnt=" not in status_url else status_url
+            req = urllib.request.Request(poll_url)
+            req.add_header("X-Access-Token",   self.token or "")
+            req.add_header("X-Requested-With", "GroupMeWeb/1.2.3")
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    s_raw = r.read().decode()
+                s = json.loads(s_raw) if s_raw.strip() else {}
+            except Exception as e:
+                dbg("upload_file: status poll failed: %s", e)
+                s = {}
+            status = s.get("status", "")
+            dbg("upload_file: poll cnt=%d  status=%s", cnt, status)
+            if status == "completed":
+                return s.get("file_id") or file_id
+            if status in ("failed", "error"):
+                return None
+            cnt += 1
+            time.sleep(self.UPLOAD_POLL_INTERVAL_S)
+        dbg("upload_file: timed out waiting for completion")
+        return None
+
+    def get_file_data(self, gid: str, file_ids: list):
+        """Resolve {file_name, file_size, mime_type} for one or more
+        file_ids via POST file.groupme.com/v1/{gid}/fileData. Returns a
+        dict mapping file_id → file_data dict. Empty dict on failure."""
+        if not file_ids:
+            return {}
+        url  = f"{GROUPME_FILE}/v1/{gid}/fileData"
+        body = json.dumps({"file_ids": list(file_ids)}).encode("utf-8")
+        req  = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type",     "application/json")
+        req.add_header("X-Access-Token",   self.token or "")
+        req.add_header("X-Requested-With", "GroupMeWeb/1.2.3")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                raw = r.read().decode()
+            entries = json.loads(raw) if raw.strip() else []
+        except Exception as e:
+            dbg("get_file_data: failed: %s", e)
+            return {}
+        out = {}
+        for ent in entries or []:
+            fid = ent.get("file_id")
+            fd  = ent.get("file_data") or {}
+            if fid and fd:
+                out[fid] = fd
+        return out
+
+    def file_download_url(self, gid: str, file_id: str) -> str:
+        """Build a download URL for a file attachment. The web client's
+        download path wasn't captured directly — best guess based on
+        REST conventions; verify if downloads stop working."""
+        return (f"{GROUPME_FILE}/v1/{gid}/files/{file_id}"
+                f"?token={urllib.parse.quote(self.token or '')}")
+
+    def download_file(self, gid: str, file_id: str, dest_path: str) -> bool:
+        """Stream an authenticated file attachment to `dest_path`.
+        Returns True on success.
+
+        Streams in 64 KB chunks so large attachments don't fully
+        buffer in memory. The request carries the token in both the
+        query string (via file_download_url) and the X-Access-Token
+        header — the server should accept either, but harmless to send
+        both."""
+        url = self.file_download_url(gid, file_id)
+        dbg("download_file: %s → %s", file_id, dest_path)
+        req = urllib.request.Request(url)
+        req.add_header("X-Access-Token",   self.token or "")
+        req.add_header("X-Requested-With", "GroupMeWeb/1.2.3")
+        req.add_header("User-Agent",       f"GroupMe-GNOME/{APP_VERSION}")
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp, \
+                 open(dest_path, "wb") as out:
+                while True:
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+            dbg("download_file: ok")
+            return True
+        except urllib.error.HTTPError as e:
+            dbg("download_file: HTTP %d", e.code)
+            return False
+        except Exception as e:
+            dbg("download_file: exception %s", e)
+            return False
 
 
 # ─────────────────────────── Faye Push Client ────────────────────
