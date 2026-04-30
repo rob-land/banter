@@ -24,6 +24,7 @@ from .dialogs.members import MembersDialog
 from .dialogs.settings import GroupSettingsDialog, PreferencesDialog
 from .dialogs.gallery import GalleryDialog
 from .dialogs.events import CreateEventDialog, EventsListDialog, CreatePollDialog
+from .dialogs.pinned import PinnedDialog
 
 
 class MainWindow(Adw.ApplicationWindow):
@@ -479,6 +480,15 @@ class MainWindow(Adw.ApplicationWindow):
         self._all_dms    = chats
         self._rows       = {}
 
+        # Register every group with the push client so typing pulses and
+        # other /group/{gid}-only events are delivered. Picked up on the
+        # next /meta/connect reconnect cycle.
+        if self._push is not None:
+            for g in groups:
+                gid = str(g.get("id", ""))
+                if gid:
+                    self._push.subscribe_group(gid)
+
         # Clear existing rows
         child = self._chats_list.get_first_child()
         while child:
@@ -642,6 +652,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Group action menu (Members first for easy access on phone)
         grp_menu = Gio.Menu()
         grp_menu.append("Members",       "win.grp-members")
+        grp_menu.append("Pinned",        "win.grp-pinned")
         grp_menu.append("Gallery",       "win.grp-album")
         grp_menu.append("View Events",   "win.grp-events-view")
         grp_menu.append("Create Event",  "win.grp-event")
@@ -755,6 +766,17 @@ class MainWindow(Adw.ApplicationWindow):
         tw.append(tl)
         hdr.set_title_widget(tw)
 
+        # DM action menu — mirrors the group's view-more button.
+        dm_menu = Gio.Menu()
+        dm_menu.append("Pinned",          "win.dm-pinned")
+        dm_menu.append("Contact Details", "win.dm-contact")
+
+        menu_btn = Gtk.MenuButton(icon_name="view-more-symbolic")
+        menu_btn.add_css_class("flat")
+        menu_btn.set_tooltip_text("Conversation actions")
+        menu_btn.set_menu_model(dm_menu)
+        hdr.pack_end(menu_btn)
+
         find_btn = Gtk.Button(icon_name="system-search-symbolic")
         find_btn.add_css_class("flat")
         find_btn.set_tooltip_text("Search this chat (Ctrl+F)")
@@ -770,6 +792,8 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._content_nav.set_title(esc(name))
         self._content_wrap.append(hdr)
+
+        self._register_dm_actions(other_user, other_user_id)
 
         # Synthetic "group" dict so ChatView has something for _gid
         # (only used for UI display; actual API calls use other_user_id)
@@ -971,7 +995,7 @@ class MainWindow(Adw.ApplicationWindow):
             except Exception:
                 pass
 
-        for name in ("grp-members", "grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
+        for name in ("grp-members", "grp-pinned", "grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
             _remove_action(name)
 
         def _act(name, cb):
@@ -980,6 +1004,7 @@ class MainWindow(Adw.ApplicationWindow):
             win.add_action(a)
 
         _act("grp-members",     lambda: self._show_members_panel())
+        _act("grp-pinned",      lambda: PinnedDialog(self._api, self, group=group).present(self))
         _act("grp-album",       lambda: GalleryDialog(self._api, group, self).present(self))
         me_id = (self._current_user or {}).get("id", "")
         _act("grp-events-view", lambda: EventsListDialog(self._api, group, me_id, self).present(self))
@@ -987,6 +1012,26 @@ class MainWindow(Adw.ApplicationWindow):
         _act("grp-poll",     lambda: CreatePollDialog(self._api, group, self).present(self))
         _act("grp-share",    lambda: self._share_group(group))
         _act("grp-settings", lambda: self._open_group_settings(group))
+
+    def _register_dm_actions(self, other_user: dict, other_user_id: str):
+        """Register window actions backing the DM header's view-more menu."""
+        win = self
+        for name in ("dm-pinned", "dm-contact"):
+            try: win.remove_action(name)
+            except Exception: pass
+
+        def _act(name, cb):
+            a = Gio.SimpleAction.new(name, None)
+            a.connect("activate", lambda *_: cb())
+            win.add_action(a)
+
+        _act("dm-pinned",  lambda: PinnedDialog(
+            self._api, self,
+            other_user_id=str(other_user_id),
+            other_user_name=(other_user.get("name") or "")
+        ).present(self))
+        _act("dm-contact", lambda: self.open_contact_detail(
+            other_user, str(other_user_id)))
 
     def _share_group(self, group: dict):
         """Show share dialog with copy button, system share, and QR code."""

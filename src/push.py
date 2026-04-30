@@ -59,6 +59,11 @@ class GroupMePush:
         self._thread     = None
         self._sock       = None          # raw ssl socket
         self._group_subs : set = set()
+        # Frame-send lock so the worker thread's draining writes don't
+        # interleave bytes with main-thread publish() calls (typing
+        # pulses). Two concurrent sendalls on the same socket can corrupt
+        # the WebSocket framing.
+        self._send_lock  = threading.Lock()
 
     # ── Public API ──────────────────────────────────────────────────
     def start(self):
@@ -75,7 +80,65 @@ class GroupMePush:
         self._running = False
 
     def subscribe_group(self, group_id: str):
-        self._group_subs.add(str(group_id))
+        """Add `group_id` to the subscription set and, if the WS is
+        already up, fire-and-forget the /meta/subscribe frame so events
+        start flowing on the *current* connection (not just on the next
+        reconnect).
+
+        We deliberately don't read the ack here — the worker thread owns
+        the recv side, and racing two recv()s on the same socket would
+        corrupt frames. The worker's recv loop will pick up the
+        subscribe response and harmlessly drop it (it doesn't match the
+        /user/ or /group/ event-forwarding filter)."""
+        gid = str(group_id)
+        is_new = gid not in self._group_subs
+        self._group_subs.add(gid)
+        if is_new and self._client_id and self._sock is not None:
+            try:
+                self._faye_send([{
+                    "channel"     : "/meta/subscribe",
+                    "clientId"    : self._client_id,
+                    "subscription": f"/group/{gid}",
+                    "id"          : self._next_id(),
+                    "ext"         : {
+                        "access_token": self._token,
+                        "timestamp"   : int(time.time()),
+                    },
+                }])
+            except Exception as e:
+                dbg("push: live subscribe %s failed: %s", gid, e)
+
+    def publish(self, channel: str, data: dict) -> bool:
+        """Publish a Faye event to `channel`. Used for typing pulses.
+
+        Best-effort: silently drops the publish if we aren't currently
+        connected. The caller is expected to send pulses on a timer, so
+        a missed pulse just means the typing indicator will time out a
+        few seconds later on the receivers — acceptable."""
+        if not self._client_id or self._sock is None:
+            return False
+        try:
+            self._faye_send([{
+                "channel" : channel,
+                "data"    : data,
+                "clientId": self._client_id,
+                "id"      : self._next_id(),
+                "ext"     : {"access_token": self._token},
+            }])
+            return True
+        except Exception as e:
+            dbg("push: publish to %s failed: %s", channel, e)
+            return False
+
+    def publish_typing_group(self, group_id: str):
+        """Emit a 'typing' pulse to /group/{gid}. Each pulse is a fresh
+        publish — receivers maintain their own sliding-timeout window
+        and auto-clear when no follow-up arrives."""
+        return self.publish(f"/group/{group_id}", {
+            "type"    : "typing",
+            "user_id" : self._user_id,
+            "started" : int(time.time() * 1000),
+        })
 
     # ── WebSocket low-level ─────────────────────────────────────────
     def _ws_connect(self):
@@ -124,7 +187,12 @@ class GroupMePush:
         dbg("push: WebSocket connected (deflate=%s)", self._deflate)
 
     def _ws_send(self, data: str):
-        """Send a masked text WebSocket frame."""
+        """Send a masked text WebSocket frame.
+
+        Locked so a concurrent main-thread publish() can't interleave
+        bytes with a worker-thread send (e.g. /meta/connect). Two raw
+        sendalls on the same socket would otherwise corrupt the frame
+        boundary."""
         payload = data.encode("utf-8")
         length  = len(payload)
         mask    = os.urandom(4)
@@ -141,7 +209,8 @@ class GroupMePush:
             header.append(0x80 | 127)
             header += length.to_bytes(8, "big")
         header += mask
-        self._sock.sendall(bytes(header) + masked)
+        with self._send_lock:
+            self._sock.sendall(bytes(header) + masked)
 
     def _ws_recv(self) -> bytes | None:
         """Receive one WebSocket frame. Returns raw payload bytes or None on close."""
@@ -356,7 +425,12 @@ class GroupMePush:
 
                         channel = ev.get("channel", "")
                         data    = ev.get("data")
-                        if data and channel.startswith("/user/"):
+                        # Forward both /user/{uid} (line.create, reactions,
+                        # edits, etc.) and /group/{gid} (typing pulses,
+                        # group-only signals). ChatView's _on_push_event
+                        # is robust to duplicate line.create deliveries.
+                        if data and (channel.startswith("/user/") or
+                                     channel.startswith("/group/")):
                             GLib.idle_add(self._on_event, data)
 
             except Exception as e:

@@ -245,6 +245,32 @@ class GroupMeAPI:
                        f"/conversations/{conv_id}/messages/{msg_id}")
         return self._ok(r)
 
+    def pin_message(self, conv_id, msg_id):
+        """Pin a message. Recovered from web.groupme.com (30 Apr 2026):
+            POST /v3/conversations/{conv_id}/messages/{mid}/pin
+        Empty body. Same `conv_id` semantics as delete_message — group_id
+        for groups, '<lo>+<hi>' for DMs. Returns True on success."""
+        r = self._req("POST",
+                      f"/conversations/{conv_id}/messages/{msg_id}/pin")
+        return self._ok(r)
+
+    def unpin_message(self, conv_id, msg_id):
+        """Unpin a message. Mirror of pin_message; same path with /unpin."""
+        r = self._req("POST",
+                      f"/conversations/{conv_id}/messages/{msg_id}/unpin")
+        return self._ok(r)
+
+    def get_pinned_group(self, gid):
+        """Return the list of currently-pinned messages in a group."""
+        r = self._req("GET", f"/pinned/groups/{gid}/messages")
+        return r.get("response", {}).get("messages", []) or []
+
+    def get_pinned_dm(self, other_user_id):
+        """Return the list of currently-pinned messages in a DM."""
+        r = self._req("GET", "/pinned/direct_messages",
+                      params={"other_user_id": str(other_user_id)})
+        return r.get("response", {}).get("direct_messages", []) or []
+
     def like_message(self, gid, msg_id):
         r = self._req("POST", f"/messages/{gid}/{msg_id}/like")
         return self._ok(r)

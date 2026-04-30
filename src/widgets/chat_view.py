@@ -1,5 +1,6 @@
 """Banter — ChatView: message list + compose bar."""
 
+import time
 from datetime import datetime
 from pathlib import Path
 import gi
@@ -84,7 +85,27 @@ class ChatView(Gtk.Box):
         # "Reply" on a bubble; cleared on send or via the reply
         # preview's close button.
         self._reply_target: dict | None = None
+        # Pinned-message ids for this conversation. Populated on demand
+        # from /v3/pinned/* endpoints; bubbles render an indicator when
+        # their id is in this set. The push stream doesn't carry pin
+        # events, so the set is only authoritative at fetch time —
+        # refetched whenever the user runs a pin/unpin action or opens
+        # the pinned-messages dialog.
+        self._pinned_ids: set = set()
+        # Typing-indicator state.
+        # _typing_users: uid → monotonic-deadline (s) at which the
+        # indicator entry expires. Refreshed on each pulse received.
+        # _typing_clear_id is a single GLib timeout that re-renders the
+        # indicator bar when the soonest deadline elapses.
+        self._typing_users: dict = {}
+        self._typing_clear_id = 0
+        # Outbound throttling: send at most one pulse every TYPING_PULSE_INTERVAL.
+        self._last_typing_sent: float = 0.0
         self._build_widgets()
+        self._fetch_pinned()
+
+    TYPING_PULSE_INTERVAL = 3.0   # s — outbound rate-limit per conversation
+    TYPING_DECAY_SECS     = 5.0   # s — how long a received pulse keeps a user "typing"
 
     def _read_poll_interval(self) -> int:
         if self._config:
@@ -220,6 +241,20 @@ class ChatView(Gtk.Box):
         clear_btn.connect("clicked", self._clear_attachment)
         self._preview_bar.append(clear_btn)
 
+        # ── Typing indicator ──
+        # Single-line dim label shown above the compose entry whenever
+        # at least one other user is mid-pulse. Hidden by default;
+        # _refresh_typing_indicator toggles visibility and label text.
+        self._typing_bar = Gtk.Box(spacing=6)
+        self._typing_bar.set_margin_start(12)
+        self._typing_bar.set_margin_end(12)
+        self._typing_bar.set_visible(False)
+        self._typing_lbl = Gtk.Label(label="")
+        self._typing_lbl.add_css_class("dim-label")
+        self._typing_lbl.set_xalign(0)
+        self._typing_lbl.set_hexpand(True)
+        self._typing_bar.append(self._typing_lbl)
+
         # ── Reply preview ──
         # Shown when the user picks "Reply" on a bubble. Sits in the
         # bottom-bar stack just like the image preview so it stays
@@ -294,6 +329,8 @@ class ChatView(Gtk.Box):
         if not self._is_dm:
             self._entry.get_buffer().connect(
                 "changed", self._on_buf_changed)
+            self._entry.get_buffer().connect(
+                "changed", self._on_buf_changed_typing)
             self._fetch_members_for_mentions()
 
         # ── Assemble via Adw.ToolbarView so the compose + preview bars
@@ -309,6 +346,7 @@ class ChatView(Gtk.Box):
         tv.set_content(scroll_overlay)
         # add_bottom_bar stacks in order added, so reply preview and
         # image preview sit above the compose entry.
+        tv.add_bottom_bar(self._typing_bar)
         tv.add_bottom_bar(self._reply_bar)
         tv.add_bottom_bar(self._preview_bar)
         tv.add_bottom_bar(compose)
@@ -360,6 +398,10 @@ class ChatView(Gtk.Box):
         if self._poll_id:
             GLib.source_remove(self._poll_id)
             self._poll_id = None
+        if self._typing_clear_id:
+            try: GLib.source_remove(self._typing_clear_id)
+            except Exception: pass
+            self._typing_clear_id = 0
         # Bumping the seq invalidates any in-flight pin timeouts so they
         # short-circuit instead of touching a destroyed adjustment.
         self._pin_seq += 1
@@ -384,8 +426,24 @@ class ChatView(Gtk.Box):
         subject = data.get("subject", {})
         dbg("push event: type=%s subject_keys=%s", ev_type, list(subject.keys()))
 
+        if ev_type == "typing":
+            # /group/{gid} flat event: {"type":"typing","user_id":"...","started":<ms>}.
+            # Group-only for now — DM typing channel hasn't been captured.
+            if self._is_dm:
+                return
+            uid = str(data.get("user_id", ""))
+            if not uid or uid == str(self._me):
+                return
+            self._on_typing_received(uid)
+            return
+
         if ev_type == "line.create":
             if str(subject.get("group_id", "")) == self._gid:
+                # Sender finished typing — drop them from the indicator.
+                sender_uid = str(subject.get("user_id", ""))
+                if sender_uid and sender_uid in self._typing_users:
+                    self._typing_users.pop(sender_uid, None)
+                    self._refresh_typing_indicator()
                 msg_id = str(subject.get("id", ""))
                 if msg_id and msg_id in self._bubble_map:
                     # Already displayed (we sent it ourselves or received a duplicate)
@@ -495,6 +553,127 @@ class ChatView(Gtk.Box):
             GLib.idle_add(self._set_initial, msgs)
 
         run_in_background(worker)
+
+    # ── Typing indicator ──
+    def _on_buf_changed_typing(self, _buf):
+        """Throttled outbound typing pulse. Pulses are best-effort — the
+        push client silently drops them while reconnecting."""
+        # Don't pulse if compose is empty (deleting the last char shouldn't
+        # tell anyone we're "typing"). Don't pulse from DMs — channel
+        # format is unverified.
+        if self._is_dm:
+            return
+        buf  = self._entry.get_buffer()
+        text = buf.get_text(buf.get_start_iter(),
+                              buf.get_end_iter(), False)
+        if not text.strip():
+            return
+        now = time.monotonic()
+        if (now - self._last_typing_sent) < self.TYPING_PULSE_INTERVAL:
+            return
+        push = getattr(self._win, "_push", None)
+        if push is None:
+            return
+        if push.publish_typing_group(self._gid):
+            self._last_typing_sent = now
+
+    def _on_typing_received(self, uid: str):
+        """Record an incoming typing pulse from `uid` and refresh the bar."""
+        self._typing_users[uid] = time.monotonic() + self.TYPING_DECAY_SECS
+        self._refresh_typing_indicator()
+        # Re-arm a single timer so the bar self-clears even if no further
+        # pulses arrive. Using a fresh timeout per pulse is overkill —
+        # one timer that re-checks the dict on fire is enough.
+        if self._typing_clear_id == 0:
+            self._typing_clear_id = GLib.timeout_add(
+                int(self.TYPING_DECAY_SECS * 1000) + 200,
+                self._on_typing_decay_tick)
+
+    def _on_typing_decay_tick(self):
+        now = time.monotonic()
+        expired = [u for u, deadline in self._typing_users.items()
+                   if deadline <= now]
+        for u in expired:
+            self._typing_users.pop(u, None)
+        self._refresh_typing_indicator()
+        if not self._typing_users:
+            self._typing_clear_id = 0
+            return False
+        return True   # keep ticking until the dict drains
+
+    def _refresh_typing_indicator(self):
+        """Update the visible 'X is typing…' label."""
+        users = list(self._typing_users.keys())
+        if not users:
+            self._typing_bar.set_visible(False)
+            self._typing_lbl.set_text("")
+            return
+        names = [self._win.get_user_name(u) for u in users]
+        if len(names) == 1:
+            text = f"{names[0]} is typing…"
+        elif len(names) == 2:
+            text = f"{names[0]} and {names[1]} are typing…"
+        else:
+            text = "Several people are typing…"
+        self._typing_lbl.set_text(text)
+        self._typing_bar.set_visible(True)
+
+    # ── Pinned messages ──
+    def _fetch_pinned(self):
+        """Refresh `_pinned_ids` from the server and update any bubbles
+        that are already on screen."""
+        is_dm     = self._is_dm
+        other_uid = self._other_uid
+        gid       = self._gid
+
+        def worker():
+            if is_dm:
+                msgs = self._api.get_pinned_dm(other_uid)
+            else:
+                msgs = self._api.get_pinned_group(gid)
+            ids = {str(m.get("id")) for m in (msgs or []) if m.get("id")}
+            GLib.idle_add(self._on_pinned_loaded, ids, msgs or [])
+
+        run_in_background(worker)
+
+    def _on_pinned_loaded(self, ids: set, _msgs: list):
+        self._pinned_ids = ids
+        # Re-render the indicator on any bubble whose pin state may have
+        # flipped. We recompute for every loaded bubble — cheap and
+        # avoids tracking diffs across fetches.
+        for mid, bubble in list(self._bubble_map.items()):
+            try:
+                bubble.set_pinned(mid in ids)
+            except Exception:
+                pass
+
+    def is_pinned(self, msg_id) -> bool:
+        return str(msg_id) in self._pinned_ids
+
+    def mark_pinned(self, msg_id, pinned: bool):
+        """Update `_pinned_ids` and the bubble indicator after a local
+        pin/unpin action. Called by MessageBubble on success."""
+        mid = str(msg_id)
+        if pinned:
+            self._pinned_ids.add(mid)
+        else:
+            self._pinned_ids.discard(mid)
+        bubble = self._bubble_map.get(mid)
+        if bubble is not None:
+            try:
+                bubble.set_pinned(pinned)
+            except Exception:
+                pass
+
+    def jump_to_message(self, msg_id):
+        """Scroll the existing bubble for `msg_id` into view. If it isn't
+        in `_bubble_map` (e.g. the user hasn't loaded that far back), no-op
+        and return False so the caller can show a toast."""
+        bubble = self._bubble_map.get(str(msg_id))
+        if bubble is None:
+            return False
+        self._scroll_to_bubble(bubble)
+        return True
 
     def _load_more(self, *_):
         if self._loading or not self._oldest_id:
@@ -625,7 +804,13 @@ class ChatView(Gtk.Box):
     def _make_bubble(self, msg):
         bubble = MessageBubble(
             msg, self._me, self._gid, self._api, self._win)
-        self._bubble_map[str(msg["id"])] = bubble
+        mid = str(msg["id"])
+        self._bubble_map[mid] = bubble
+        if mid in self._pinned_ids:
+            try:
+                bubble.set_pinned(True)
+            except Exception:
+                pass
         return bubble
 
     def _add_bubble(self, msg, append=True):

@@ -50,6 +50,7 @@ dialog_sources = files(
   'dialogs/group.py',
   'dialogs/login.py',
   'dialogs/members.py',
+  'dialogs/pinned.py',
   'dialogs/settings.py',
 )
 

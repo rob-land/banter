@@ -136,6 +136,9 @@ class MessageBubble(Gtk.Box):
         # decide whether to show our context menu or the built-in
         # text-selection menu (cut/copy/paste).
         self._selectable_labels: list = []
+        # Pin indicator widget (hidden by default) — toggled by
+        # `set_pinned()` whenever the chat view's pinned set changes.
+        self._pin_icon = self._make_pin_icon()
 
         # Cache this sender's name so reaction tooltips can resolve it
         uid  = str(msg.get("user_id", ""))
@@ -171,6 +174,8 @@ class MessageBubble(Gtk.Box):
             self._edited_lbl = self._make_edited_label(msg)
             if self._edited_lbl is not None:
                 hdr.append(self._edited_lbl)
+
+            hdr.append(self._pin_icon)
 
             hdr.set_margin_start(4)
 
@@ -328,6 +333,7 @@ class MessageBubble(Gtk.Box):
         if is_mine:
             ts_box = Gtk.Box(spacing=4)
             ts_box.set_halign(Gtk.Align.END)
+            ts_box.append(self._pin_icon)
             self._edited_lbl = self._make_edited_label(msg)
             if self._edited_lbl is not None:
                 ts_box.append(self._edited_lbl)
@@ -774,6 +780,14 @@ class MessageBubble(Gtk.Box):
         menu = Gio.Menu()
         menu.append("Reply",     "bubble.reply")
         menu.append("Copy text", "bubble.copy")
+        # Pin / unpin — server enforces who can do it (admins-only vs.
+        # everyone is a per-group setting). We always offer the action
+        # and surface a toast on failure rather than trying to mirror
+        # the server-side permission state client-side.
+        if self._is_pinned():
+            menu.append("Unpin", "bubble.unpin")
+        else:
+            menu.append("Pin", "bubble.pin")
         if self.is_mine:
             if self.EDIT_ENABLED:
                 created = int(self.msg.get("created_at") or 0)
@@ -787,6 +801,8 @@ class MessageBubble(Gtk.Box):
         for name, cb in (
             ("reply",  self._action_reply),
             ("copy",   self._action_copy),
+            ("pin",    self._action_pin),
+            ("unpin",  self._action_unpin),
             ("edit",   self._action_edit),
             ("delete", self._action_delete),
         ):
@@ -802,6 +818,64 @@ class MessageBubble(Gtk.Box):
         popover.set_pointing_to(rect)
         popover.set_has_arrow(False)
         popover.popup()
+
+    # ── Pin indicator ─────────────────────────────────────────────────
+    def _make_pin_icon(self):
+        img = Gtk.Image.new_from_icon_name("view-pin-symbolic")
+        img.set_pixel_size(12)
+        img.add_css_class("dim-label")
+        img.set_tooltip_text("Pinned")
+        img.set_visible(False)
+        return img
+
+    def set_pinned(self, pinned: bool):
+        """Show / hide the pin indicator on this bubble. Called by
+        ChatView when the conversation's pinned set changes."""
+        if self._pin_icon is not None:
+            self._pin_icon.set_visible(bool(pinned))
+
+    def _is_pinned(self) -> bool:
+        cv = getattr(self.win, "_chat_view", None)
+        if cv is None:
+            return False
+        try:
+            return cv.is_pinned(self.msg.get("id"))
+        except Exception:
+            return False
+
+    def _action_pin(self, *_):
+        self._do_pin(True)
+
+    def _action_unpin(self, *_):
+        self._do_pin(False)
+
+    def _do_pin(self, pin: bool):
+        conv_id = self._conversation_id()
+        mid     = str(self.msg.get("id"))
+        api     = self.api
+        win     = self.win
+
+        def worker():
+            return (api.pin_message(conv_id, mid) if pin
+                    else api.unpin_message(conv_id, mid))
+
+        def on_done(ok):
+            if ok:
+                cv = getattr(win, "_chat_view", None)
+                if cv is not None:
+                    cv.mark_pinned(mid, pin)
+                try:
+                    win.toast("Message pinned" if pin else "Message unpinned")
+                except Exception:
+                    pass
+            else:
+                try:
+                    win.toast("Failed to pin message" if pin
+                              else "Failed to unpin message")
+                except Exception:
+                    pass
+
+        run_in_background(worker, on_done)
 
     def _action_reply(self, *_):
         chat_view = getattr(self.win, "_chat_view", None)
