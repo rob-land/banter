@@ -48,6 +48,7 @@ dialog_sources = files(
   'dialogs/events.py',
   'dialogs/gallery.py',
   'dialogs/group.py',
+  'dialogs/jump_to_date.py',
   'dialogs/login.py',
   'dialogs/members.py',
   'dialogs/pinned.py',

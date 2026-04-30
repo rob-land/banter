@@ -25,6 +25,7 @@ from .dialogs.settings import GroupSettingsDialog, PreferencesDialog
 from .dialogs.gallery import GalleryDialog
 from .dialogs.events import CreateEventDialog, EventsListDialog, CreatePollDialog
 from .dialogs.pinned import PinnedDialog
+from .dialogs.jump_to_date import JumpToDateDialog
 
 
 class MainWindow(Adw.ApplicationWindow):
@@ -653,6 +654,7 @@ class MainWindow(Adw.ApplicationWindow):
         grp_menu = Gio.Menu()
         grp_menu.append("Members",       "win.grp-members")
         grp_menu.append("Pinned",        "win.grp-pinned")
+        grp_menu.append("Jump to Date",  "win.grp-jump-date")
         grp_menu.append("Gallery",       "win.grp-album")
         grp_menu.append("View Events",   "win.grp-events-view")
         grp_menu.append("Create Event",  "win.grp-event")
@@ -769,6 +771,7 @@ class MainWindow(Adw.ApplicationWindow):
         # DM action menu — mirrors the group's view-more button.
         dm_menu = Gio.Menu()
         dm_menu.append("Pinned",          "win.dm-pinned")
+        dm_menu.append("Jump to Date",    "win.dm-jump-date")
         dm_menu.append("Contact Details", "win.dm-contact")
 
         menu_btn = Gtk.MenuButton(icon_name="view-more-symbolic")
@@ -995,7 +998,7 @@ class MainWindow(Adw.ApplicationWindow):
             except Exception:
                 pass
 
-        for name in ("grp-members", "grp-pinned", "grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
+        for name in ("grp-members", "grp-pinned", "grp-jump-date", "grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
             _remove_action(name)
 
         def _act(name, cb):
@@ -1005,6 +1008,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         _act("grp-members",     lambda: self._show_members_panel())
         _act("grp-pinned",      lambda: PinnedDialog(self._api, self, group=group).present(self))
+        _act("grp-jump-date",   lambda: JumpToDateDialog(self).present(self))
         _act("grp-album",       lambda: GalleryDialog(self._api, group, self).present(self))
         me_id = (self._current_user or {}).get("id", "")
         _act("grp-events-view", lambda: EventsListDialog(self._api, group, me_id, self).present(self))
@@ -1016,7 +1020,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _register_dm_actions(self, other_user: dict, other_user_id: str):
         """Register window actions backing the DM header's view-more menu."""
         win = self
-        for name in ("dm-pinned", "dm-contact"):
+        for name in ("dm-pinned", "dm-jump-date", "dm-contact"):
             try: win.remove_action(name)
             except Exception: pass
 
@@ -1025,12 +1029,13 @@ class MainWindow(Adw.ApplicationWindow):
             a.connect("activate", lambda *_: cb())
             win.add_action(a)
 
-        _act("dm-pinned",  lambda: PinnedDialog(
+        _act("dm-pinned",    lambda: PinnedDialog(
             self._api, self,
             other_user_id=str(other_user_id),
             other_user_name=(other_user.get("name") or "")
         ).present(self))
-        _act("dm-contact", lambda: self.open_contact_detail(
+        _act("dm-jump-date", lambda: JumpToDateDialog(self).present(self))
+        _act("dm-contact",   lambda: self.open_contact_detail(
             other_user, str(other_user_id)))
 
     def _share_group(self, group: dict):
