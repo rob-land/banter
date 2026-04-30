@@ -160,12 +160,14 @@ class FileAttachment(Gtk.Button):
     URL through the system handler — Banter doesn't manage the
     download itself."""
 
-    def __init__(self, file_id: str, group_id: str, api, parent_window):
+    def __init__(self, file_id: str, conv_id: str, api, parent_window):
         super().__init__()
         self.add_css_class("file-attachment")
         self.add_css_class("flat")
         self._file_id  = file_id
-        self._gid      = group_id
+        # The conversation_id used by file.groupme.com endpoints —
+        # group_id for groups, "<lo>+<hi>" for DMs.
+        self._cid      = conv_id
         self._api      = api
         self._parent   = parent_window
         self._file_name = ""
@@ -195,10 +197,10 @@ class FileAttachment(Gtk.Button):
         self._fetch_metadata()
 
     def _fetch_metadata(self):
-        gid, fid = self._gid, self._file_id
+        cid, fid = self._cid, self._file_id
         api = self._api
         def worker():
-            data = api.get_file_data(gid, [fid])
+            data = api.get_file_data(cid, [fid])
             GLib.idle_add(self._on_metadata, data.get(fid) or {})
         run_in_background(worker)
 
@@ -232,13 +234,13 @@ class FileAttachment(Gtk.Button):
         try: self._parent.toast(f"Saving {name}…")
         except Exception: pass
 
-        gid    = self._gid
+        cid    = self._cid
         fid    = self._file_id
         api    = self._api
         parent = self._parent
 
         def worker():
-            ok = api.download_file(gid, fid, dest)
+            ok = api.download_file(cid, fid, dest)
             def report():
                 try:
                     parent.toast(

@@ -306,8 +306,11 @@ class MessageBubble(Gtk.Box):
             elif kind == "file":
                 fid = att.get("file_id")
                 if fid:
+                    # FileAttachment hits file.groupme.com which uses
+                    # the conversation_id (gid for groups, <lo>+<hi>
+                    # for DMs), not the bubble's display gid.
                     bubble.append(FileAttachment(
-                        fid, group_id, api, window))
+                        fid, self._conversation_id(), api, window))
             elif kind == "location":
                 loc = Gtk.Label(
                     label=f"📍 {att.get('name','Location')}"

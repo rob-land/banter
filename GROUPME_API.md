@@ -344,13 +344,15 @@ entry on a subsequent send/edit.
 
 ### File upload (non-image attachments, undocumented)
 
-Recovered 2026-04-30. Lives at `file.groupme.com` and requires a
-three-step flow.
+Recovered 2026-04-30. Lives at `file.groupme.com`. Three-step flow.
+The `{cid}` segment is the same conversation_id used by edit / delete /
+pin: `group_id` for groups, `<lo>+<hi>` (sorted participant ids) for
+DMs.
 
 **1. Upload the bytes:**
 ```
-POST https://file.groupme.com/v1/{gid}/files?name=<urlencoded filename>
-Content-Type: <file mime>
+POST https://file.groupme.com/v1/{cid}/files?name=<urlencoded filename>
+Content-Type: <file mime>   (application/octet-stream is fine)
 X-Access-Token: <token>
 X-Requested-With: GroupMeWeb/1.2.3
 
@@ -361,20 +363,26 @@ Returns 201 + JSON containing `file_id` (and/or `status_url`). The
 
 **2. Poll completion:**
 ```
-GET https://file.groupme.com/v1/{gid}/uploadStatus?job=<file_id>&cnt=<N>
+GET https://file.groupme.com/v1/{cid}/uploadStatus?job=<file_id>&cnt=<N>
 ```
 `cnt` is a 0-indexed counter the web client increments per poll.
 Returns `{"status": "completed", "file_id": "..."}` when ready.
 
-**3. Send the message** via the standard `POST /v3/groups/{gid}/messages`
-with the attachment:
+**3. Send the message** via the standard endpoint:
+
+* Groups: `POST /v3/groups/{gid}/messages` with body wrapped in
+  `{"message": {...}}`.
+* DMs: `POST /v3/direct_messages` with body wrapped in
+  `{"direct_message": {...}}`.
+
+In both cases the attachment is the same:
 ```json
 {"type": "file", "file_id": "<uuid>"}
 ```
 
 **Resolve metadata for received files:**
 ```
-POST https://file.groupme.com/v1/{gid}/fileData
+POST https://file.groupme.com/v1/{cid}/fileData
 Content-Type: application/json
 
 {"file_ids": ["<uuid>", ...]}
@@ -389,13 +397,18 @@ The message attachment itself only carries `file_id` — `file_name`,
 `file_size`, and `mime_type` must be fetched separately. Banter calls
 this lazily from `FileAttachment._fetch_metadata`.
 
-**Download URL — unverified.** No click-to-download capture; Banter's
-best guess is `GET .../v1/{gid}/files/{file_id}?token=<token>`. Update
-if downloads stop working.
+**Download URL** (verified 2026-04-30):
+```
+GET https://file.groupme.com/v1/{cid}/files/{file_id}?access_token=<token>&_dl=<unix_ms>
+```
 
-**DM equivalent — unverified.** The upload URL bakes in `{group_id}`;
-the DM form (`<lo>+<hi>`? `other_user_id`?) isn't captured. Banter
-toasts in DMs and routes only image attachments there.
+* The query parameter is **`access_token`**, not `token` like other
+  endpoints. Using `token=` returns 401.
+* `_dl=<unix_ms>` is a cache buster the web client adds; harmless to
+  include and helps bypass intermediary caches.
+* Response carries `Content-Disposition: attachment; filename*=UTF-8''<encoded>`
+  with the original filename, so the server-suggested filename will
+  match the upload.
 
 ---
 
@@ -536,9 +549,6 @@ Faye channels:
 ## What's deliberately not implemented
 
 * **DM typing indicators** — channel format unverified.
-* **DM file uploads** — upload URL pattern for DMs unverified.
-* **File download URL** — actual endpoint pattern unverified; current
-  best-guess is `GET .../v1/{gid}/files/{file_id}?token=<...>`.
 * **GIF picker** — would use Tenor/Giphy directly, not GroupMe.
 * **Pin events on push** — server doesn't seem to emit them; pin state
   refetched on demand.

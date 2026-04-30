@@ -1389,13 +1389,23 @@ class ChatView(Gtk.Box):
         self._scroll_bottom()
 
     # ── Attachments (image / file) ──
+    def _conv_id(self) -> str:
+        """API conversation_id for /conversations/ and /file.groupme.com/v1/
+        endpoints — `_gid` for groups, `<lo>+<hi>` for DMs."""
+        if not self._is_dm:
+            return self._gid
+        try:
+            a, b = int(self._me), int(self._other_uid)
+            lo, hi = (a, b) if a < b else (b, a)
+            return f"{lo}+{hi}"
+        except (TypeError, ValueError):
+            return f"{self._me}+{self._other_uid}"
+
     def _pick_attachment(self, *_):
         """Open the system file picker. Picked files are routed by MIME
         type: images via the existing image-upload path (rendered inline
         on receivers), everything else via the file-upload path
-        (rendered as a download link). DMs are image-only — the file
-        endpoint URL is /v1/{group_id}/files; the DM equivalent hasn't
-        been captured."""
+        (rendered as a download link)."""
         fd = Gtk.FileDialog()
         fd.set_title("Attach file")
         fd.open(self._win, None, self._on_attachment_picked)
@@ -1423,17 +1433,14 @@ class ChatView(Gtk.Box):
             run_in_background(worker)
             return
 
-        # Non-image: file attachment. DMs aren't supported (URL format
-        # unverified) — surface a toast rather than failing silently.
-        if self._is_dm:
-            self._win.toast("File attachments aren't supported in DMs yet")
-            return
-
+        # Non-image: file attachment. Works for both groups and DMs;
+        # the upload URL is /v1/{conv_id}/files where conv_id is the
+        # group_id for groups or "<lo>+<hi>" for DMs.
         self._win.toast("Uploading file…")
-        gid = self._gid
+        cid  = self._conv_id()
         name = Path(path).name
         def worker():
-            file_id = self._api.upload_file(gid, path)
+            file_id = self._api.upload_file(cid, path)
             if file_id:
                 GLib.idle_add(self._set_pending_file, file_id, name)
             else:

@@ -566,7 +566,7 @@ class GroupMeAPI:
     # ── file upload (non-image attachments) ──
     #
     # Recovered from web.groupme.com (2026-04-30). Three steps:
-    #   1. POST file.groupme.com/v1/{gid}/files?name=<urlencoded>
+    #   1. POST file.groupme.com/v1/{cid}/files?name=<urlencoded>
     #      — raw bytes, Content-Type set to the file's MIME type.
     #      Server returns a JSON envelope with the file_id (which
     #      doubles as the upload job id).
@@ -583,10 +583,11 @@ class GroupMeAPI:
     UPLOAD_POLL_INTERVAL_S = 1.0
     UPLOAD_POLL_TIMEOUT_S  = 60   # ~60 polls; web client allows much longer
 
-    def upload_file(self, gid: str, file_path: str):
-        """Upload a non-image file to a group's file store. Returns the
-        file_id on success, or None on any failure. Blocking — call
-        from a worker thread."""
+    def upload_file(self, cid: str, file_path: str):
+        """Upload a non-image file. `cid` is the same conversation_id
+        used for edit/delete/pin: `group_id` for groups, `<lo>+<hi>`
+        for DMs. Returns the file_id on success, or None on any
+        failure. Blocking — call from a worker thread."""
         path = Path(file_path)
         name = path.name
         # Best-effort MIME guess; default to octet-stream which the
@@ -600,7 +601,7 @@ class GroupMeAPI:
             dbg("upload_file: read failed %s: %s", file_path, e)
             return None
 
-        url = (f"{GROUPME_FILE}/v1/{gid}/files"
+        url = (f"{GROUPME_FILE}/v1/{cid}/files"
                f"?name={urllib.parse.quote(name)}")
         dbg("upload_file: %s  mime=%s  bytes=%d", name, mime, len(data))
 
@@ -649,7 +650,7 @@ class GroupMeAPI:
 
         # Step 2: poll until completed.
         if not status_url:
-            status_url = (f"{GROUPME_FILE}/v1/{gid}/uploadStatus"
+            status_url = (f"{GROUPME_FILE}/v1/{cid}/uploadStatus"
                           f"?job={file_id}")
 
         deadline = time.time() + self.UPLOAD_POLL_TIMEOUT_S
@@ -678,13 +679,13 @@ class GroupMeAPI:
         dbg("upload_file: timed out waiting for completion")
         return None
 
-    def get_file_data(self, gid: str, file_ids: list):
+    def get_file_data(self, cid: str, file_ids: list):
         """Resolve {file_name, file_size, mime_type} for one or more
-        file_ids via POST file.groupme.com/v1/{gid}/fileData. Returns a
+        file_ids via POST file.groupme.com/v1/{cid}/fileData. Returns a
         dict mapping file_id → file_data dict. Empty dict on failure."""
         if not file_ids:
             return {}
-        url  = f"{GROUPME_FILE}/v1/{gid}/fileData"
+        url  = f"{GROUPME_FILE}/v1/{cid}/fileData"
         body = json.dumps({"file_ids": list(file_ids)}).encode("utf-8")
         req  = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type",     "application/json")
@@ -705,23 +706,26 @@ class GroupMeAPI:
                 out[fid] = fd
         return out
 
-    def file_download_url(self, gid: str, file_id: str) -> str:
-        """Build a download URL for a file attachment. The web client's
-        download path wasn't captured directly — best guess based on
-        REST conventions; verify if downloads stop working."""
-        return (f"{GROUPME_FILE}/v1/{gid}/files/{file_id}"
-                f"?token={urllib.parse.quote(self.token or '')}")
+    def file_download_url(self, cid: str, file_id: str) -> str:
+        """Build a download URL for a file attachment.
 
-    def download_file(self, gid: str, file_id: str, dest_path: str) -> bool:
+        Verified against web.groupme.com 2026-04-30. The query param
+        is `access_token`, NOT `token` like elsewhere in the API.
+        `_dl=<unix_ms>` is a cache buster the web client adds; harmless
+        to include and helps bypass any intermediary cache."""
+        return (f"{GROUPME_FILE}/v1/{cid}/files/{file_id}"
+                f"?access_token={urllib.parse.quote(self.token or '')}"
+                f"&_dl={int(time.time() * 1000)}")
+
+    def download_file(self, cid: str, file_id: str, dest_path: str) -> bool:
         """Stream an authenticated file attachment to `dest_path`.
         Returns True on success.
 
         Streams in 64 KB chunks so large attachments don't fully
         buffer in memory. The request carries the token in both the
         query string (via file_download_url) and the X-Access-Token
-        header — the server should accept either, but harmless to send
-        both."""
-        url = self.file_download_url(gid, file_id)
+        header — the server accepts either; harmless to send both."""
+        url = self.file_download_url(cid, file_id)
         dbg("download_file: %s → %s", file_id, dest_path)
         req = urllib.request.Request(url)
         req.add_header("X-Access-Token",   self.token or "")
