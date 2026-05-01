@@ -220,6 +220,27 @@ APP_CSS = """
     border-color: alpha(@accent_fg_color, 0.25);
 }
 
+/* ── Poll card (inline in message bubble) ── */
+.poll-card {
+    background-color: alpha(@window_bg_color, 0.5);
+    border: 1px solid alpha(@borders, 0.6);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+.msg-bubble.mine .poll-card {
+    background-color: alpha(@accent_fg_color, 0.12);
+    border-color: alpha(@accent_fg_color, 0.25);
+}
+.poll-card .poll-option {
+    padding: 0;
+    border-radius: 6px;
+}
+.poll-card .poll-bar {
+    min-height: 4px;
+}
+
 /* ── Reply quote block ── */
 .reply-quote {
     border-left: 3px solid @accent_bg_color;

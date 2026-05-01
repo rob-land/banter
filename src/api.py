@@ -620,9 +620,32 @@ class GroupMeAPI:
         return r.get("response", {})
 
     # ── polls ──
+    # The /poll/{gid} list returns each poll wrapped as
+    # `{"data": {…fields…}, …}` (push events use the same wrapper).
+    # `_unwrap_poll` flattens that so callers always see the field
+    # block. Field shape (recovered from push capture):
+    #   subject, options[].id/title/votes (votes absent when 0),
+    #   type ("single"|"multi"), status ("active"|"ended"|"deleted"),
+    #   visibility ("anonymous"|"public"), expiration (unix seconds).
+
+    @staticmethod
+    def _unwrap_poll(p: dict) -> dict:
+        if isinstance(p, dict) and isinstance(p.get("data"), dict) \
+                and "subject" in p["data"]:
+            return p["data"]
+        return p or {}
+
     def get_polls(self, gid):
         r = self._req("GET", f"/poll/{gid}")
-        return r.get("response", {}).get("polls", [])
+        return [self._unwrap_poll(p)
+                for p in r.get("response", {}).get("polls", [])]
+
+    def get_poll(self, gid, poll_id):
+        target = str(poll_id)
+        for p in self.get_polls(gid):
+            if str(p.get("id", "")) == target:
+                return p
+        return None
 
     def create_poll(self, gid, subject: str, options: list,
                     expiry: int = 86400, multichoice: bool = False):

@@ -15,6 +15,7 @@ from ..api import GroupMeAPI
 from ..helpers import set_avatar_from_url, set_pack_emoji
 from .misc import ImageAttachment, FileAttachment
 from .event_card import EventCard
+from .poll_card import PollCard
 
 # ── URL / email linkification ─────────────────────────────────────────
 _URL_RE = re.compile(
@@ -345,6 +346,11 @@ class MessageBubble(Gtk.Box):
                         card = EventCard(api, group_id, me_id,
                                          event_id, event_data, window)
                         bubble.append(card)
+            elif kind == "poll":
+                poll_id = att.get("poll_id") or att.get("id")
+                if poll_id:
+                    bubble.append(PollCard(
+                        api, group_id, me_id, poll_id, window))
 
         # Timestamp (mine only, shown inside bubble)
         self._ts_box = None

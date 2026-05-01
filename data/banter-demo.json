@@ -23,10 +23,10 @@
         {"id": "20000004", "user_id": "20000004", "nickname": "Morgan Reed","image_url": null}
       ],
       "messages": {
-        "count": 6,
-        "last_message_id": "msg-1001-006",
-        "last_message_created_at": 1714867200,
-        "preview": {"nickname": "Riley Chen", "text": "I'll bring the kayaks!", "image_url": null, "attachments": []}
+        "count": 7,
+        "last_message_id": "msg-1001-007",
+        "last_message_created_at": 1714867800,
+        "preview": {"nickname": "Jamie Park", "text": "Created new poll 'Friday or Saturday departure?'", "image_url": null, "attachments": []}
       },
       "_messages": [
         {"id": "msg-1001-001", "source_guid": "g1", "user_id": "20000001", "name": "Jamie Park",  "text": "Confirmed the cabin for July 12-15. Sleeps 8.", "created_at": 1714780800, "favorited_by": [], "attachments": []},
@@ -34,7 +34,26 @@
         {"id": "msg-1001-003", "source_guid": "g3", "user_id": "20000001", "name": "Jamie Park",  "text": "Yeah we land back Tuesday so we're good.", "created_at": 1714783200, "favorited_by": [], "attachments": []},
         {"id": "msg-1001-004", "source_guid": "g4", "user_id": "10000001", "name": "Alex Demo",   "text": "I can drive — got the SUV. @Riley Chen want a ride?", "created_at": 1714855200, "favorited_by": ["20000003", "20000001"], "attachments": [{"type": "mentions", "user_ids": ["20000003"], "loci": [[28, 11]]}]},
         {"id": "msg-1001-005", "source_guid": "g5", "user_id": "20000003", "name": "Riley Chen",  "text": "Yes please! Picking me up at 6am sharp 😅", "created_at": 1714862400, "favorited_by": ["10000001"], "attachments": []},
-        {"id": "msg-1001-006", "source_guid": "g6", "user_id": "20000003", "name": "Riley Chen",  "text": "I'll bring the kayaks!", "created_at": 1714867200, "favorited_by": [], "attachments": []}
+        {"id": "msg-1001-006", "source_guid": "g6", "user_id": "20000003", "name": "Riley Chen",  "text": "I'll bring the kayaks!", "created_at": 1714867200, "favorited_by": [], "attachments": []},
+        {"id": "msg-1001-007", "source_guid": "g7", "user_id": "20000001", "name": "Jamie Park",  "text": "Created new poll 'Friday or Saturday departure?'", "created_at": 1714867800, "favorited_by": [], "attachments": [{"type": "poll", "poll_id": "poll-1001-001"}]}
+      ],
+      "_polls": [
+        {
+          "id": "poll-1001-001",
+          "subject": "Friday or Saturday departure?",
+          "options": [
+            {"id": "1", "title": "Friday after work (≈6pm)", "votes": 3},
+            {"id": "2", "title": "Saturday morning (early)", "votes": 1}
+          ],
+          "type": "single",
+          "status": "active",
+          "visibility": "public",
+          "owner_id": "20000001",
+          "conversation_id": "1001",
+          "created_at": 1714867800,
+          "expiration": 9999999999,
+          "last_modified": 1714867900
+        }
       ]
     },
     {

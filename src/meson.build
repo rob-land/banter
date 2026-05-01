@@ -47,6 +47,7 @@ widget_sources = files(
   'widgets/mention_popover.py',
   'widgets/message_bubble.py',
   'widgets/misc.py',
+  'widgets/poll_card.py',
   'widgets/reactions_sheet.py',
 )
 

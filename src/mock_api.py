@@ -222,6 +222,36 @@ class MockGroupMeAPI:
         for c in self._data["dms"]:
             yield c.setdefault("_messages", [])
 
+    # ── Polls ────────────────────────────────────────────────────────
+    def get_polls(self, gid):
+        g = self._group(gid)
+        return list(g.get("_polls", [])) if g else []
+
+    def get_poll(self, gid, poll_id):
+        target = str(poll_id)
+        for p in self.get_polls(gid):
+            if str(p.get("id", "")) == target:
+                return p
+        return None
+
+    def vote_poll(self, gid, poll_id: str, option_ids: list):
+        g = self._group(gid)
+        if g is None: return False
+        target = str(poll_id)
+        for p in g.get("_polls", []):
+            if str(p.get("id", "")) != target:
+                continue
+            chosen = {str(x) for x in option_ids}
+            for opt in p.get("options", []):
+                oid = str(opt.get("id", ""))
+                # In demo mode each click is a fresh +1 — we have no
+                # per-voter ledger to detect a re-vote.
+                if oid in chosen:
+                    opt["votes"] = int(opt.get("votes") or 0) + 1
+            p["last_modified"] = int(time.time())
+            return True
+        return False
+
     # ── Pinned ───────────────────────────────────────────────────────
     def get_pinned_group(self, gid):
         return []
