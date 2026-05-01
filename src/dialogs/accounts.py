@@ -15,7 +15,7 @@ from ..widgets.base import StandardDialog
 
 class AccountsDialog(StandardDialog):
     def __init__(self, config: Config, parent, on_switch):
-        super().__init__(title="Accounts", width=400, height=-1)
+        super().__init__(title="Accounts", width=400, height=420)
         self._config    = config
         self._parent    = parent
         self._on_switch = on_switch

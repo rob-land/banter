@@ -176,7 +176,7 @@ class GroupSettingsDialog(StandardDialog):
 
 class PreferencesDialog(StandardDialog):
     def __init__(self, config, parent, chat_view=None):
-        super().__init__(title="Preferences", width=400, height=-1)
+        super().__init__(title="Preferences", width=400, height=440)
         self._config    = config
         self._parent    = parent
         self._chat_view = chat_view
