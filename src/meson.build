@@ -27,6 +27,7 @@ banter_sources = files(
   'main.py',
   'oauth.py',
   'push.py',
+  'secrets.py',
   'window.py',
 )
 

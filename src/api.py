@@ -15,8 +15,17 @@ from .constants import (
 
 
 class GroupMeAPI:
-    def __init__(self, token: str = None):
+    def __init__(self, token: str = None, on_unauthorized=None):
         self.token = token
+        # Optional callback fired ONCE when a token-bearing request
+        # comes back HTTP 401. Lets the UI layer surface a session-
+        # expired prompt rather than letting every subsequent call
+        # silently fail with a "Failed to <verb>" toast. Called from
+        # the worker thread that did the request — the callback is
+        # responsible for routing back to the main thread (typically
+        # via GLib.idle_add).
+        self._on_unauthorized   = on_unauthorized
+        self._unauthorized_seen = False
 
     # ── low-level ──
     def _req(self, method: str, endpoint: str, data=None,
@@ -74,14 +83,37 @@ class GroupMeAPI:
                 raw = e.read().decode()
                 parsed = json.loads(raw)
                 dbg("← HTTP %d  body: %s", e.code, raw[:400])
+                self._maybe_fire_unauthorized(e.code)
                 return parsed
             except Exception:
                 dbg("← HTTP %d  (non-JSON body: %s)", e.code, raw[:200])
+                self._maybe_fire_unauthorized(e.code)
                 return {"meta": {"code": e.code, "errors": [str(e)]}}
         except Exception as e:
             dbg("← EXCEPTION: %s", e)
             log.exception("Unexpected error in _req(%s %s)", method, endpoint)
             return {"meta": {"code": 0, "errors": [str(e)]}}
+
+    def _maybe_fire_unauthorized(self, code: int):
+        """Fire `on_unauthorized` exactly once per session when a token-
+        bearing request returns 401. Without the one-shot guard, any
+        post-expiry burst of API calls (push reconnect retry, sidebar
+        refresh, message poll) would each trigger a separate session-
+        expired prompt."""
+        if code != 401:
+            return
+        if not self.token:
+            return   # request wasn't authenticated; not our problem
+        if self._unauthorized_seen:
+            return
+        self._unauthorized_seen = True
+        cb = self._on_unauthorized
+        if cb is None:
+            return
+        try:
+            cb()
+        except Exception as e:
+            dbg("on_unauthorized callback raised: %s", e)
 
     def _ok(self, r):
         return r.get("meta", {}).get("code") in (200, 201, 204)

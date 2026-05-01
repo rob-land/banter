@@ -75,7 +75,8 @@ class MainWindow(Adw.ApplicationWindow):
 
         acc = self._config.get_active_account()
         if acc:
-            self._api = GroupMeAPI(acc["token"])
+            self._api = GroupMeAPI(acc["token"],
+                                    on_unauthorized=self._on_session_expired)
             spinner = Gtk.Spinner(spinning=True, margin_top=120,
                                    halign=Gtk.Align.CENTER)
             self._toast_overlay.set_child(spinner)
@@ -162,9 +163,37 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_login(self, token: str, user: dict):
         self._login_dialog = None
-        self._api = GroupMeAPI(token)
+        self._api = GroupMeAPI(token,
+                                on_unauthorized=self._on_session_expired)
         self._config.add_account(token, user)
         self._build_main_ui(user)
+
+    def _on_session_expired(self):
+        """Fired by GroupMeAPI when a token-bearing request returns 401.
+        Runs on the worker thread that did the request — bounce to the
+        main thread, then drop the dead account and re-prompt sign-in."""
+        GLib.idle_add(self._handle_session_expired)
+
+    def _handle_session_expired(self):
+        try:
+            self.toast("Session expired — please sign in again")
+        except Exception:
+            pass
+        # Stop the push client so it doesn't keep retrying with the
+        # dead token in the background.
+        self._stop_push()
+        # Drop the active account from config so the next launch (or
+        # the upcoming sign-in flow) doesn't try the same dead token.
+        acc = self._config.get_active_account()
+        if acc:
+            self._config.remove_account(acc["user_id"])
+        # Tear down whatever main-UI state we built so the login
+        # dialog is the only thing the user sees, and bounce there.
+        self._chat_view = None
+        self._api = None
+        self._current_user = None
+        self._go_login()
+        return False   # drop the idle_add
 
     # ── Main UI ──
     def _build_main_ui(self, user: dict):
