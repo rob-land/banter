@@ -1,4 +1,4 @@
-"""Banter — GroupSettingsDialog and PreferencesDialog."""
+"""Banter — GroupSettingsDialog."""
 
 import gi
 gi.require_version('Gtk', '4.0')
@@ -170,67 +170,3 @@ class GroupSettingsDialog(StandardDialog):
                 ok and self._parent.refresh_groups()
             ))
         run_in_background(worker)
-
-
-# ─────────────────────────── Preferences Dialog ──────────────────
-
-class PreferencesDialog(StandardDialog):
-    def __init__(self, config, parent, chat_view=None):
-        super().__init__(title="Preferences", width=400, height=440)
-        self._config    = config
-        self._parent    = parent
-        self._chat_view = chat_view
-
-        box = self.set_scrolled_body(margin=12, spacing=16)
-
-        # ── Chat polling ──
-        poll_grp = Adw.PreferencesGroup(
-            title="Message Refresh",
-            description="How often to check for new messages in the open chat")
-
-        current_secs = int(config.get_pref("poll_interval_secs", 15))
-        self._poll_spin = Adw.SpinRow.new_with_range(5, 300, 5)
-        self._poll_spin.set_title("Interval (seconds)")
-        self._poll_spin.set_value(current_secs)
-        poll_grp.add(self._poll_spin)
-        box.append(poll_grp)
-
-        # ── Background polling ──
-        bg_grp = Adw.PreferencesGroup(
-            title="Background Notifications",
-            description="How often to check all groups for new messages")
-
-        current_bg = int(config.get_pref("bg_poll_interval_secs", 30))
-        self._bg_spin = Adw.SpinRow.new_with_range(10, 600, 10)
-        self._bg_spin.set_title("Interval (seconds)")
-        self._bg_spin.set_value(current_bg)
-        bg_grp.add(self._bg_spin)
-        box.append(bg_grp)
-
-        # ── Save button ──
-        save_btn = Gtk.Button(label="Save")
-        save_btn.add_css_class("suggested-action")
-        save_btn.add_css_class("pill")
-        save_btn.connect("clicked", self._save)
-        box.append(save_btn)
-
-    def _save(self, *_):
-        secs    = int(self._poll_spin.get_value())
-        bg_secs = int(self._bg_spin.get_value())
-        self._config.set_pref("poll_interval_secs",    secs)
-        self._config.set_pref("bg_poll_interval_secs", bg_secs)
-        if self._chat_view:
-            self._chat_view.restart_poll()
-        # Apply the new background-poll interval immediately instead of
-        # waiting for app restart.
-        if hasattr(self._parent, "_start_bg_poll"):
-            self._parent._start_bg_poll()
-        self._parent.toast(
-            f"Poll: {secs}s  •  Background: {bg_secs}s")
-        self.close()
-
-
-# ─────────────────────────── Create Album Dialog ─────────────────
-
-# ─────────────────────────── Gallery Dialog ──────────────────────
-

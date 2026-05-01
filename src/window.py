@@ -22,7 +22,7 @@ from .oauth import LoginDialog
 from .dialogs.accounts import AccountsDialog
 from .dialogs.group import GroupDetailDialog, NewGroupDialog, ContactDetailDialog
 from .dialogs.members import MembersDialog
-from .dialogs.settings import GroupSettingsDialog, PreferencesDialog
+from .dialogs.settings import GroupSettingsDialog
 from .dialogs.gallery import GalleryDialog
 from .dialogs.events import CreateEventDialog, EventsListDialog, CreatePollDialog
 from .dialogs.pinned import PinnedDialog
@@ -562,7 +562,6 @@ class MainWindow(Adw.ApplicationWindow):
         user = self._current_user
         menu.append(f"Signed in as {user.get('name','')}", None)
         menu.append("Manage Accounts", "app.accounts")
-        menu.append("Preferences", "app.preferences")
         menu.append("Sign Out", "app.sign-out")
         acc_btn.set_menu_model(menu)
         hdr.pack_start(acc_btn)
@@ -1059,12 +1058,13 @@ class MainWindow(Adw.ApplicationWindow):
             child = child.get_next_sibling()
 
     # ── Background poll (all groups/DMs — for notifications & badges) ──
+    BG_POLL_INTERVAL_MS = 30_000
+
     def _start_bg_poll(self):
         if self._bg_poll_id:
             GLib.source_remove(self._bg_poll_id)
-        secs = int(self._config.get_pref("bg_poll_interval_secs", 30) or 30)
-        interval_ms = max(10, secs) * 1000
-        self._bg_poll_id = GLib.timeout_add(interval_ms, self._bg_poll)
+        self._bg_poll_id = GLib.timeout_add(
+            self.BG_POLL_INTERVAL_MS, self._bg_poll)
 
     def _stop_bg_poll(self):
         if self._bg_poll_id:
@@ -1431,9 +1431,6 @@ class MainWindow(Adw.ApplicationWindow):
 
         run_in_background(worker)
 
-    def _open_preferences(self, *_):
-        PreferencesDialog(self._config, self, self._chat_view).present(self)
-
     def _setup_actions(self):
         app = self.get_application()
 
@@ -1444,10 +1441,6 @@ class MainWindow(Adw.ApplicationWindow):
         acc_act = Gio.SimpleAction.new("accounts", None)
         acc_act.connect("activate", self._manage_accounts)
         app.add_action(acc_act)
-
-        pref_act = Gio.SimpleAction.new("preferences", None)
-        pref_act.connect("activate", self._open_preferences)
-        app.add_action(pref_act)
 
         # Ctrl+F: toggle the active chat view's search bar.
         find_act = Gio.SimpleAction.new("find", None)

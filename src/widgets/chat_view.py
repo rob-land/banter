@@ -43,7 +43,7 @@ class ChatView(Gtk.Box):
         )
         # For DMs: the other participant's user_id (used for fetch/send)
         self._other_uid    = str(other_user_id) if other_user_id else self._gid
-        self._poll_ms      = self._read_poll_interval()
+        self._poll_ms      = self.DEFAULT_POLL_INTERVAL
         self._oldest_id   = None
         self._newest_id   = None
         self._oldest_date = None
@@ -127,15 +127,6 @@ class ChatView(Gtk.Box):
 
     TYPING_PULSE_INTERVAL = 3.0   # s — outbound rate-limit per conversation
     TYPING_DECAY_SECS     = 5.0   # s — how long a received pulse keeps a user "typing"
-
-    def _read_poll_interval(self) -> int:
-        if self._config:
-            secs = self._config.get_pref("poll_interval_secs", 15)
-            try:
-                return max(5, int(secs)) * 1000
-            except (TypeError, ValueError):
-                pass
-        return self.DEFAULT_POLL_INTERVAL
 
     def _build_widgets(self):
         """Build all child widgets. Called once from __init__."""
@@ -384,18 +375,6 @@ class ChatView(Gtk.Box):
         self._msgs_box.append(self._load_more_btn)
 
         self._fetch_messages()
-        self._start_polling()
-
-    def restart_poll(self):
-        """Cancel + restart the DM fallback poll with the freshly-saved
-        interval. No-op for group chats (they use the shared push
-        client)."""
-        if not self._is_dm:
-            return
-        if self._poll_id:
-            GLib.source_remove(self._poll_id)
-            self._poll_id = None
-        self._poll_ms = self._read_poll_interval()
         self._start_polling()
 
     # ── Lifecycle ──
