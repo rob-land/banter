@@ -2,18 +2,6 @@
 <schemalist>
   <schema id="land.rob.Banter" path="/land/rob/Banter/">
 
-    <key name="poll-interval-secs" type="i">
-      <default>15</default>
-      <summary>Chat poll interval (seconds)</summary>
-      <description>How often to poll for new messages in the active chat.</description>
-    </key>
-
-    <key name="bg-poll-interval-secs" type="i">
-      <default>30</default>
-      <summary>Background poll interval (seconds)</summary>
-      <description>How often to poll all groups for unread counts and notifications.</description>
-    </key>
-
     <key name="window-width" type="i">
       <default>980</default>
       <summary>Window width</summary>

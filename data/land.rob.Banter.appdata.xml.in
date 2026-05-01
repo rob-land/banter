@@ -25,13 +25,21 @@
 
   <launchable type="desktop-id">land.rob.Banter.desktop</launchable>
 
-  <url type="homepage">https://gitlab.gnome.org/World/banter</url>
-  <url type="bugtracker">https://gitlab.gnome.org/World/banter/issues</url>
+  <url type="homepage">https://codeberg.org/robland/banter</url>
+  <url type="bugtracker">https://codeberg.org/robland/banter/issues</url>
+  <url type="vcs-browser">https://codeberg.org/robland/banter</url>
 
-  <developer_name>Rob Daniel</developer_name>
+  <developer id="land.rob">
+    <name>Rob Daniel</name>
+  </developer>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#a4c8f0</color>
+    <color type="primary" scheme_preference="dark">#1a5fb4</color>
+  </branding>
 
   <releases>
-    <release version="1.0.0" date="2026-04-03">
+    <release version="0.1.0" date="2026-05-01">
       <description>
         <p>Initial release.</p>
       </description>
