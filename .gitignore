@@ -30,3 +30,4 @@ debug.out
 debug.log
 Screenshot*
 *.flatpak-builder.log
+*.har
