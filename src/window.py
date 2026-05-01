@@ -1,5 +1,6 @@
 """Banter — MainWindow: the application's primary window."""
 
+import time
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -121,26 +122,88 @@ class MainWindow(Adw.ApplicationWindow):
         btn.set_tooltip_text(
             "Unmute notifications" if muted else "Mute notifications")
 
-    def _on_mute_toggle(self, btn, conv_type: str, conv_id):
-        self.toggle_conv_mute(conv_type, conv_id)
-        self._refresh_mute_button(btn, conv_type, conv_id)
-        muted = self.is_conv_muted(conv_type, conv_id)
+    # Timed-mute presets shown in the bell-button popover. Tuples of
+    # (label, seconds) — seconds=-1 is "until I turn it back on" (the
+    # config layer's permanent sentinel).
+    _MUTE_PRESETS = (
+        ("1 hour",                   3600),
+        ("8 hours",                  8 * 3600),
+        ("Until I turn it back on", -1),
+    )
+
+    def _on_mute_clicked(self, btn, conv_type: str, conv_id):
+        """Open a popover with timed-mute presets. Replaces the old
+        toggle behavior: clicking the bell now offers durations
+        instead of flipping straight to permanent-mute."""
+        pop = Gtk.Popover()
+        pop.set_parent(btn)
+        pop.set_has_arrow(True)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        box.set_margin_top(6); box.set_margin_bottom(6)
+        box.set_margin_start(6); box.set_margin_end(6)
+
+        # If currently muted, the first action is "Unmute"; otherwise
+        # we just offer the durations.
+        if self.is_conv_muted(conv_type, conv_id):
+            unmute_btn = Gtk.Button(label="Unmute")
+            unmute_btn.add_css_class("flat")
+            unmute_btn.set_halign(Gtk.Align.FILL)
+            unmute_btn.connect("clicked",
+                self._on_mute_picked, conv_type, conv_id, 0, btn, pop)
+            box.append(unmute_btn)
+            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            sep.set_margin_top(2); sep.set_margin_bottom(2)
+            box.append(sep)
+
+        for label, secs in self._MUTE_PRESETS:
+            b = Gtk.Button(label=label)
+            b.add_css_class("flat")
+            b.set_halign(Gtk.Align.FILL)
+            b.connect("clicked",
+                self._on_mute_picked, conv_type, conv_id, secs, btn, pop)
+            box.append(b)
+
+        pop.set_child(box)
+        pop.popup()
+
+    def _on_mute_picked(self, _src, conv_type, conv_id, secs,
+                        bell_btn, pop):
+        pop.popdown()
+        key = self._mute_key(conv_type, conv_id)
+        if secs == 0:
+            self._config.clear_mute(key)
+            msg = "Notifications on"
+        elif secs == -1:
+            self._config.set_mute(key, -1)
+            msg = "Muted until you turn it back on"
+        else:
+            until = int(time.time()) + secs
+            self._config.set_mute(key, until)
+            # Use the preset label for the toast — keeps the wording
+            # consistent with the popover the user just clicked.
+            msg = f"Muted for {next(
+                (lbl for lbl, s in self._MUTE_PRESETS if s == secs),
+                f'{secs} seconds')}"
+
+        self._refresh_mute_button(bell_btn, conv_type, conv_id)
+        row = self._rows.get(self._conv_key(conv_type, conv_id))
+        if row is not None and hasattr(row, "set_muted"):
+            row.set_muted(self._config.is_muted(key))
         try:
-            self.toast(
-                "Conversation muted" if muted
-                else "Notifications on")
+            self.toast(msg)
         except Exception:
             pass
 
     def toggle_conv_mute(self, conv_type: str, conv_id):
-        """Flip the mute state for the conversation. Permanent mute
-        (epoch -1) — the UI doesn't yet expose timed options."""
+        """Flip the mute state for the conversation between off and
+        permanent. Retained for any external callers; the bell button
+        no longer uses it (see _on_mute_clicked for the timed UX)."""
         key = self._mute_key(conv_type, conv_id)
         if self._config.is_muted(key):
             self._config.clear_mute(key)
         else:
             self._config.set_mute(key, -1)
-        # Refresh the sidebar row's muted indicator if visible.
         row = self._rows.get(self._conv_key(conv_type, conv_id))
         if row is not None and hasattr(row, "set_muted"):
             row.set_muted(self._config.is_muted(key))
@@ -388,42 +451,92 @@ class MainWindow(Adw.ApplicationWindow):
         if self._chat_view:
             self._chat_view._on_push_event(data)
 
-        # Also keep the sidebar unread counts fresh on new messages
-        if ev_type == "line.create":
-            # System notifications GroupMe injects after edits/deletes
-            # are noise — they'd update the sidebar preview to "Rob
-            # edited to: ..." which buries the actual conversation.
+        # Also keep the sidebar unread counts fresh on new messages.
+        # `direct_message.create` is the DM-specific event name some
+        # endpoints emit; we accept both that and a `line.create`
+        # without a group_id (the DM form on /user/{uid}).
+        if ev_type in ("line.create", "direct_message.create"):
             if is_hidden_system_message(subject):
                 return
 
             gid = str(subject.get("group_id", ""))
-            key = self._conv_key("group", gid)
-            row = self._rows.get(key)
-            if gid and row is not None:
-                current_gid = (str(self._current_group["id"])
-                               if self._current_group else None)
-                sender = subject.get("name", "")
-                text   = (subject.get("text") or "").strip()
+            if gid:
+                self._handle_group_push_message(gid, subject)
+            else:
+                self._handle_dm_push_message(subject)
 
-                # Always move to top, update preview + time — keeps the
-                # sidebar in most-recent order regardless of which chat
-                # is currently open.
-                self._chats_list.remove(row)
-                self._chats_list.insert(row, 0)
-                ts = subject.get("created_at")
-                if ts:
-                    row.update_time(ts)
-                row.update_preview(sender, text)
+    def _handle_group_push_message(self, gid: str, subject: dict):
+        key = self._conv_key("group", gid)
+        row = self._rows.get(key)
+        if row is None:
+            return
+        sender = subject.get("name", "")
+        text   = (subject.get("text") or "").strip()
 
-                if gid != current_gid:
-                    row.bump_unread()
-                    # Send a real-time desktop notification via push rather than
-                    # waiting for the bg_poll (which may fire after the user has
-                    # already read the message on another device, making unread=0).
-                    notif_text = text or "📎 attachment"
-                    name = (row.conv or {}).get("name", "GroupMe")
-                    self._send_desktop_notification(
-                        name, f"{sender}: {notif_text}", tag=f"group-{gid}")
+        # Always move to top, update preview + time — keeps the
+        # sidebar in most-recent order regardless of which chat
+        # is currently open.
+        self._chats_list.remove(row)
+        self._chats_list.insert(row, 0)
+        ts = subject.get("created_at")
+        if ts:
+            row.update_time(ts)
+        row.update_preview(sender, text)
+
+        # Mirror the bg_poll's _last_msg_ids bookkeeping so the next
+        # poll doesn't re-fire a notification for the same message.
+        msg_id = str(subject.get("id", ""))
+        if msg_id:
+            self._last_msg_ids[key] = msg_id
+
+        if self._is_conv_open("group", gid):
+            return
+        row.bump_unread()
+        notif_text = text or "📎 attachment"
+        name = (row.conv or {}).get("name", "GroupMe")
+        self._send_desktop_notification(
+            name, f"{sender}: {notif_text}", tag=f"group-{gid}")
+
+    def _handle_dm_push_message(self, subject: dict):
+        """Real-time DM notification path. Without this, DMs only
+        notified via the 30 s bg_poll because the push event lacks
+        a group_id and the legacy handler skipped it."""
+        sender_uid = str(subject.get("user_id", "") or
+                          subject.get("sender_id", ""))
+        me_id = str((self._current_user or {}).get("id", ""))
+        if not sender_uid or sender_uid == me_id:
+            return   # self-echo of an outgoing send
+
+        # The other party in this DM, from my perspective, is whoever
+        # the sender is (since they're the participant that isn't me).
+        other_id = sender_uid
+        key      = self._conv_key("dm", other_id)
+        row      = self._rows.get(key)
+
+        sender = subject.get("name") or "Someone"
+        text   = (subject.get("text") or "").strip()
+
+        if row is not None:
+            self._chats_list.remove(row)
+            self._chats_list.insert(row, 0)
+            ts = subject.get("created_at")
+            if ts:
+                row.update_time(ts)
+            row.update_preview(sender, text)
+
+        # Mirror bg_poll bookkeeping so the next /chats poll doesn't
+        # double-fire a notification for the same message.
+        msg_id = str(subject.get("id", ""))
+        if msg_id:
+            self._last_msg_ids[key] = msg_id
+
+        if self._is_conv_open("dm", other_id):
+            return
+        if row is not None:
+            row.bump_unread()
+        notif_text = text or "📎 attachment"
+        self._send_desktop_notification(
+            sender, notif_text, tag=f"dm-{other_id}")
 
     def _build_sidebar(self):
         sidebar_nav = Adw.NavigationPage(title=APP_NAME)
@@ -782,7 +895,7 @@ class MainWindow(Adw.ApplicationWindow):
         mute_btn = Gtk.Button()
         mute_btn.add_css_class("flat")
         self._refresh_mute_button(mute_btn, "group", group["id"])
-        mute_btn.connect("clicked", self._on_mute_toggle, "group",
+        mute_btn.connect("clicked", self._on_mute_clicked, "group",
                           str(group["id"]))
         hdr.pack_end(mute_btn)
 
@@ -891,7 +1004,7 @@ class MainWindow(Adw.ApplicationWindow):
         mute_btn = Gtk.Button()
         mute_btn.add_css_class("flat")
         self._refresh_mute_button(mute_btn, "dm", other_user_id)
-        mute_btn.connect("clicked", self._on_mute_toggle, "dm",
+        mute_btn.connect("clicked", self._on_mute_clicked, "dm",
                           str(other_user_id))
         hdr.pack_end(mute_btn)
 
@@ -969,10 +1082,34 @@ class MainWindow(Adw.ApplicationWindow):
         run_in_background(worker)
         return True   # keep timer alive
 
+    def _is_conv_open(self, conv_type: str, conv_id) -> bool:
+        """Whether the active ChatView is showing this conversation.
+        Uses ChatView's own state rather than `_current_group`, which
+        is only ever set for groups (not DMs)."""
+        cv = self._chat_view
+        if cv is None:
+            return False
+        cid = str(conv_id)
+        if conv_type == "dm":
+            return bool(getattr(cv, "_is_dm", False)
+                        and str(getattr(cv, "_other_uid", "")) == cid)
+        return bool(not getattr(cv, "_is_dm", False)
+                    and str(getattr(cv, "_gid", "")) == cid)
+
     def _process_bg_update(self, groups, chats):
-        current_gid = (str(self._current_group["id"])
-                       if self._current_group else None)
-        total_unread = 0
+        # The /groups and /chats responses both carry an `unread_count`
+        # field, but in practice the value is `None` (not an integer)
+        # for the vast majority of conversations — relying on it as
+        # the notification gate caused DM notifications to never fire
+        # at all. Instead we use "last_message_id changed since the
+        # previous poll" as the new-message signal, plus a self-echo
+        # filter so I don't get a notification for messages I just
+        # sent. The local count of unread badges is also derived from
+        # the same signal — there's no exact unread count without
+        # fetching messages, so we just toggle a sidebar dot.
+        me_id   = str((self._current_user or {}).get("id", ""))
+        my_name = (self._current_user or {}).get("name", "")
+        any_unread = False
 
         # ── Groups ──
         for g in groups:
@@ -981,84 +1118,100 @@ class MainWindow(Adw.ApplicationWindow):
             row      = self._rows.get(key)
             msgs     = g.get("messages", {})
             last_id  = msgs.get("last_message_id")
-            unread   = int(msgs.get("unread_count") or 0)
             prev_id  = self._last_msg_ids.get(key)
-            total_unread += unread
 
-            if last_id and last_id != prev_id:
-                self._last_msg_ids[key] = last_id
+            if not (last_id and last_id != prev_id):
+                continue
+            self._last_msg_ids[key] = last_id
 
-                # Move to top of unified chats list + refresh preview/time
-                if row is not None:
-                    self._chats_list.remove(row)
-                    self._chats_list.insert(row, 0)
-                    ts = msgs.get("last_message_created_at")
-                    if ts:
-                        row.update_time(ts)
-                    preview = msgs.get("preview", {}) or {}
-                    row.update_preview(
-                        preview.get("nickname", ""),
-                        preview.get("text") or "")
+            # Move to top of unified chats list + refresh preview/time
+            preview = msgs.get("preview", {}) or {}
+            if row is not None:
+                self._chats_list.remove(row)
+                self._chats_list.insert(row, 0)
+                ts = msgs.get("last_message_created_at")
+                if ts:
+                    row.update_time(ts)
+                row.update_preview(
+                    preview.get("nickname", ""),
+                    preview.get("text") or "")
 
-                if gid != current_gid:
-                    if row is not None:
-                        row.set_unread(unread)
-                    if unread > 0:
-                        preview = msgs.get("preview", {})
-                        sender  = preview.get("nickname", "Someone")
-                        text    = (preview.get("text") or "📎 attachment").strip()
-                        name    = g.get("name", "GroupMe")
-                        self._send_desktop_notification(
-                            name, f"{sender}: {text}", tag=f"group-{gid}")
-            elif row is not None:
-                row.set_unread(unread)
+            # Self-echo filter: group preview has nickname but no
+            # user_id, so we fall back to comparing against our own
+            # display name. Imperfect (a member with the same name
+            # would be filtered too) but the failure mode is "missed
+            # notification on a name collision" which is benign.
+            sender = preview.get("nickname", "")
+            from_me = bool(my_name) and sender == my_name
+            if from_me or self._is_conv_open("group", gid):
+                continue
+            any_unread = True
+            if row is not None:
+                row.bump_unread()
+            text = (preview.get("text") or "📎 attachment").strip()
+            self._send_desktop_notification(
+                g.get("name", "GroupMe"),
+                f"{sender}: {text}" if sender else text,
+                tag=f"group-{gid}")
 
         # ── DMs ──
+        dbg("bg_poll: %d chats received", len(chats))
         for chat in chats:
             other_id = str(chat.get("other_user", {}).get("id", ""))
             key      = self._conv_key("dm", other_id)
             row      = self._rows.get(key)
-            last_id  = chat.get("last_message", {}).get("id")
-            unread   = int(chat.get("unread_count") or 0)
+            lm       = chat.get("last_message", {}) or {}
+            last_id  = lm.get("id")
             prev_id  = self._last_msg_ids.get(key)
-            total_unread += unread
 
-            is_open = (self._current_group is not None and
-                       str(self._current_group.get("id", "")) == other_id)
+            if not last_id:
+                dbg("bg_poll: dm %s has no last_message.id, skipping", other_id)
+                continue
+            if last_id == prev_id:
+                continue
+            dbg("bg_poll: dm %s NEW last_id=%s (prev=%s)",
+                other_id, last_id, prev_id)
+            self._last_msg_ids[key] = last_id
 
-            if last_id and last_id != prev_id:
-                self._last_msg_ids[key] = last_id
+            # Move to top + refresh preview/time
+            if row is not None:
+                self._chats_list.remove(row)
+                self._chats_list.insert(row, 0)
+                ts = lm.get("created_at")
+                if ts:
+                    row.update_time(ts)
+                sender_id = str(lm.get("sender_id") or lm.get("user_id") or "")
+                if me_id and sender_id == me_id:
+                    sender_for_preview = "You"
+                else:
+                    sender_for_preview = chat.get("other_user", {}).get("name", "")
+                row.update_preview(sender_for_preview, lm.get("text") or "")
 
-                # Move to top of unified chats list + refresh preview/time
-                if row is not None:
-                    self._chats_list.remove(row)
-                    self._chats_list.insert(row, 0)
-                    lm = chat.get("last_message", {}) or {}
-                    ts = lm.get("created_at")
-                    if ts:
-                        row.update_time(ts)
-                    sender_id = str(lm.get("sender_id") or lm.get("user_id") or "")
-                    me_id     = str((self._current_user or {}).get("id", ""))
-                    if me_id and sender_id == me_id:
-                        sender = "You"
-                    else:
-                        sender = chat.get("other_user", {}).get("name", "")
-                    row.update_preview(sender, lm.get("text") or "")
+            # Self-echo filter: DM last_message has user_id, so this
+            # is exact (unlike groups).
+            sender_id = str(lm.get("sender_id") or lm.get("user_id") or "")
+            from_me   = bool(me_id) and sender_id == me_id
+            is_open   = self._is_conv_open("dm", other_id)
+            dbg("bg_poll: dm %s sender=%s me=%s from_me=%s open=%s",
+                other_id, sender_id, me_id, from_me, is_open)
+            if from_me or is_open:
+                continue
+            any_unread = True
+            if row is not None:
+                row.bump_unread()
+            other_name = chat.get("other_user", {}).get("name", "Someone")
+            text       = (lm.get("text") or "📎 attachment").strip()
+            self._send_desktop_notification(
+                other_name, text, tag=f"dm-{other_id}")
 
-                if not is_open and unread > 0:
-                    if row is not None:
-                        row.set_unread(unread)
-                    other_name = chat.get("other_user", {}).get("name", "Someone")
-                    last_text  = (chat.get("last_message", {})
-                                      .get("text") or "📎 attachment").strip()
-                    self._send_desktop_notification(
-                        other_name, last_text, tag=f"dm-{other_id}")
-            elif row is not None:
-                row.set_unread(unread)
-
-        # Update tab attention dot
+        # Tab attention dot reflects persistent unread state, not just
+        # "any new this poll" — derive from the per-row counters that
+        # bump_unread / set_unread maintain.
+        any_unread_persistent = any(
+            getattr(r, "_unread_count_n", 0) > 0
+            for r in self._rows.values())
         if hasattr(self, '_chats_page'):
-            self._chats_page.set_needs_attention(total_unread > 0)
+            self._chats_page.set_needs_attention(any_unread_persistent)
 
     def _send_desktop_notification(self, title: str, body: str,
                                     tag: str = "banter-msg"):
