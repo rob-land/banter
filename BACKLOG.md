@@ -26,6 +26,15 @@ and haven't been touched yet. Loose priority order, top = most useful.
 - **Quote-reply tweaks** — currently the reply preview shows
   `"Replying to <name>: <text>"` as plain text; could borrow the
   styled left-bar treatment that incoming reply quotes use.
+- **Audio / video calls.** GroupMe groups support multi-party
+  calls in the official clients; Banter is silent on them. Big
+  effort — see GROUPME_API.md "What's deliberately not
+  implemented" for the technical scope. A reasonable interim
+  feature would be passive call detection: when a group call
+  starts, surface a banner / notification that says "Call in
+  progress — open in web/mobile to join." Capture a HAR while
+  initiating a call from web.groupme.com to find the signaling
+  endpoint.
 
 ## Edit-message UX polish
 

@@ -551,7 +551,16 @@ Faye channels:
 
 ## What's deliberately not implemented
 
-* **DM typing indicators** — channel format unverified.
+* **Audio / video calls** — GroupMe's web and mobile clients support
+  multi-party calls inside a group. Banter does not. The protocol
+  hasn't been captured (likely a proprietary signaling layer over
+  push or a dedicated WebSocket plus a media SFU using WebRTC). On
+  Linux a real implementation would mean GStreamer's `webrtcbin`,
+  Pipewire/portal access for camera+mic, and a non-trivial UI for
+  participants/controls. Treat as out-of-scope for now; if a call
+  starts in a group, the user should join from the official
+  app/web. Worth adding a passive "Call started" indicator on the
+  group when we can detect the signaling event.
 * **GIF picker** — would use Tenor/Giphy directly, not GroupMe.
 * **Pin events on push** — server doesn't seem to emit them; pin state
   refetched on demand.
@@ -562,6 +571,6 @@ Faye channels:
 
 ---
 
-*Last verified against `web.groupme.com` traces on 2026-04-30. If
+*Last verified against `web.groupme.com` traces on 2026-05-01. If
 something here stops working, capture a HAR from the official web
 client first and compare.*
