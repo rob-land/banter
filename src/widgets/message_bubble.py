@@ -123,7 +123,7 @@ class MessageBubble(Gtk.Box):
     MIN_BUBBLE_GAP  = 32    # px — minimum spacer width opposite the bubble
 
     def __init__(self, msg: dict, me_id, group_id: str,
-                 api: GroupMeAPI, window):
+                 api: GroupMeAPI, window, *, pending: bool = False):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         self.msg  = msg
         self.gid  = group_id
@@ -132,6 +132,15 @@ class MessageBubble(Gtk.Box):
         self.me   = str(me_id)
         is_mine    = str(msg.get("user_id", "")) == self.me
         self.is_mine = is_mine
+        # Pending/failed state for optimistic-UI sends. A `pending`
+        # bubble is rendered grayed-out with a "Sending…" caption and
+        # has no reactions row or context menu — the message hasn't
+        # been confirmed by the server yet, so we can't react to it,
+        # edit it, or delete it. transition_to_sent() and
+        # transition_to_failed() flip the state once the API call
+        # returns. transition_to_pending() is used for retries.
+        self.is_pending = bool(pending)
+        self.is_failed  = False
         # Labels with set_selectable(True) — checked on right-click to
         # decide whether to show our context menu or the built-in
         # text-selection menu (cut/copy/paste).
@@ -338,19 +347,20 @@ class MessageBubble(Gtk.Box):
                         bubble.append(card)
 
         # Timestamp (mine only, shown inside bubble)
+        self._ts_box = None
         if is_mine:
-            ts_box = Gtk.Box(spacing=4)
-            ts_box.set_halign(Gtk.Align.END)
-            ts_box.append(self._pin_icon)
+            self._ts_box = Gtk.Box(spacing=4)
+            self._ts_box.set_halign(Gtk.Align.END)
+            self._ts_box.append(self._pin_icon)
             self._edited_lbl = self._make_edited_label(msg)
             if self._edited_lbl is not None:
-                ts_box.append(self._edited_lbl)
+                self._ts_box.append(self._edited_lbl)
             ts = msg.get("created_at", 0)
             tl = Gtk.Label(
                 label=datetime.fromtimestamp(ts).strftime("%-I:%M %p"))
             tl.add_css_class("dim-caption")
-            ts_box.append(tl)
-            bubble.append(ts_box)
+            self._ts_box.append(tl)
+            bubble.append(self._ts_box)
 
         if is_mine:
             row_box.append(spacer)
@@ -360,42 +370,51 @@ class MessageBubble(Gtk.Box):
             row_box.append(spacer)
         self.append(row_box)
 
+        # Stash bubble + row_box references so transition_to_sent /
+        # transition_to_failed can mutate them later (add status
+        # indicators, build the reactions row that was deferred for
+        # pending bubbles, etc.).
+        self._bubble_inner = bubble
+        self._bubble_for_menu = bubble
+        self._row_box   = row_box
+        self._spacer    = spacer
+
         # ── Reactions row ──
-        self._reactions_box = Gtk.Box(spacing=4)
-        self._reactions_box.set_halign(
-            Gtk.Align.END if is_mine else Gtk.Align.START)
-        self._reactions_box.set_margin_start(8)
-        self._reactions_box.set_margin_end(8)
-        self._reactions_box.set_margin_top(2)
-        self.append(self._reactions_box)
+        # Skip for pending bubbles — there's nothing to react to until
+        # the server has assigned a real id. transition_to_sent will
+        # build it lazily.
+        self._reactions_box = None
+        if not self.is_pending:
+            self._build_reactions_row()
+            self._render_reactions(msg.get("reactions", []),
+                                   msg.get("favorited_by", []))
+
+        # ── Pending/failed indicator ──
+        # Inserted alongside the timestamp for own messages. Includes a
+        # small spinner during sending and a Retry/Discard action row
+        # below the bubble in the failed state.
+        self._pending_status_lbl = None
+        self._pending_spinner    = None
+        self._action_row         = None
+        if self.is_pending:
+            bubble.add_css_class("pending")
+            self._add_pending_indicator()
 
         self.set_margin_bottom(6)
         self.set_margin_start(8)
         self.set_margin_end(8)
 
-        # Render initial state
-        self._render_reactions(msg.get("reactions", []),
-                               msg.get("favorited_by", []))
-
         # ── Context menu (right-click + long-press) ────────────────────
-        # Lives on the inner bubble so taps on the avatar/header column
-        # don't trigger it. Reply / Copy work for any message; Edit /
-        # Delete only show on the user's own messages. The right-click
-        # gesture is in CAPTURE phase so it pre-empts the built-in
-        # context menu of any selectable child label — but the handler
-        # bows out (lets the default through) when text is currently
-        # selected, so the user can still right-click to copy a
-        # selected substring.
-        self._bubble_for_menu = bubble
-        rclick = Gtk.GestureClick()
-        rclick.set_button(3)
-        rclick.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        rclick.connect("pressed", self._on_menu_click)
-        bubble.add_controller(rclick)
-        long_press = Gtk.GestureLongPress()
-        long_press.set_touch_only(False)
-        long_press.connect("pressed", self._on_menu_long_press)
-        bubble.add_controller(long_press)
+        # Skipped for pending bubbles: there's no message id yet so
+        # reply / copy / edit / delete / pin all have nothing to
+        # operate on. Re-installed by transition_to_sent.
+        # The right-click gesture is in CAPTURE phase so it pre-empts
+        # the built-in context menu of any selectable child label —
+        # but the handler bows out (lets the default through) when
+        # text is currently selected, so the user can still right-click
+        # to copy a selected substring.
+        if not self.is_pending:
+            self._wire_context_menu()
 
     # ── Reply quote ──
     def _set_quote(self, parent_msg):
@@ -447,6 +466,157 @@ class MessageBubble(Gtk.Box):
         self._quote_box.append(text_lbl)
 
     # ── Reactions ──
+    def _build_reactions_row(self):
+        """Create and append the reactions Gtk.Box. Idempotent — no-op
+        if the row already exists (e.g. transition_to_sent re-calling
+        on an already-built bubble)."""
+        if self._reactions_box is not None:
+            return
+        self._reactions_box = Gtk.Box(spacing=4)
+        self._reactions_box.set_halign(
+            Gtk.Align.END if self.is_mine else Gtk.Align.START)
+        self._reactions_box.set_margin_start(8)
+        self._reactions_box.set_margin_end(8)
+        self._reactions_box.set_margin_top(2)
+        self.append(self._reactions_box)
+
+    def _wire_context_menu(self):
+        """Attach right-click + long-press gesture handlers to the
+        inner bubble. Idempotent — repeated wiring would just stack
+        gestures harmlessly, but skip if already done."""
+        if getattr(self, "_menu_wired", False):
+            return
+        rclick = Gtk.GestureClick()
+        rclick.set_button(3)
+        rclick.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        rclick.connect("pressed", self._on_menu_click)
+        self._bubble_for_menu.add_controller(rclick)
+        long_press = Gtk.GestureLongPress()
+        long_press.set_touch_only(False)
+        long_press.connect("pressed", self._on_menu_long_press)
+        self._bubble_for_menu.add_controller(long_press)
+        self._menu_wired = True
+
+    # ── Pending / failed state ─────────────────────────────────────
+    def _add_pending_indicator(self):
+        """Show a small spinner + 'Sending…' caption next to the
+        timestamp. Fixed by `transition_to_sent` or replaced with the
+        failed indicator by `transition_to_failed`."""
+        if self._ts_box is None:
+            return
+        self._pending_spinner = Gtk.Spinner(spinning=True)
+        self._pending_spinner.set_valign(Gtk.Align.CENTER)
+        self._pending_status_lbl = Gtk.Label(label="Sending…")
+        self._pending_status_lbl.add_css_class("dim-caption")
+        # Insert at the start of ts_box so they appear before the time.
+        self._ts_box.prepend(self._pending_status_lbl)
+        self._ts_box.prepend(self._pending_spinner)
+
+    def _remove_pending_indicator(self):
+        if self._pending_spinner is not None:
+            self._pending_spinner.set_spinning(False)
+            parent = self._pending_spinner.get_parent()
+            if parent is not None:
+                parent.remove(self._pending_spinner)
+            self._pending_spinner = None
+        if self._pending_status_lbl is not None:
+            parent = self._pending_status_lbl.get_parent()
+            if parent is not None:
+                parent.remove(self._pending_status_lbl)
+            self._pending_status_lbl = None
+
+    def _add_failed_indicator(self):
+        """Replace the 'Sending…' caption with a failed-state caption
+        and append an inline Retry / Discard action row to the bubble.
+        Action handlers route through ChatView (see _action_retry /
+        _action_discard)."""
+        if self._ts_box is None:
+            return
+        # Failed caption
+        self._pending_status_lbl = Gtk.Label(label="Failed to send")
+        self._pending_status_lbl.add_css_class("error")
+        self._pending_status_lbl.add_css_class("caption")
+        icon = Gtk.Image.new_from_icon_name("dialog-error-symbolic")
+        icon.add_css_class("error")
+        self._ts_box.prepend(self._pending_status_lbl)
+        self._ts_box.prepend(icon)
+
+        # Inline action row (Retry / Discard)
+        self._action_row = Gtk.Box(spacing=8)
+        self._action_row.set_halign(Gtk.Align.END)
+        self._action_row.set_margin_top(4)
+        retry_btn = Gtk.Button(label="Retry")
+        retry_btn.add_css_class("flat")
+        retry_btn.connect("clicked", lambda *_: self._action_retry())
+        discard_btn = Gtk.Button(label="Discard")
+        discard_btn.add_css_class("flat")
+        discard_btn.add_css_class("destructive-action")
+        discard_btn.connect("clicked", lambda *_: self._action_discard())
+        self._action_row.append(retry_btn)
+        self._action_row.append(discard_btn)
+        self._bubble_inner.append(self._action_row)
+
+    def _remove_failed_indicator(self):
+        if self._action_row is not None:
+            parent = self._action_row.get_parent()
+            if parent is not None:
+                parent.remove(self._action_row)
+            self._action_row = None
+        # The failed caption shares the same _pending_status_lbl slot
+        # as the sending caption — _remove_pending_indicator handles it
+        # whether it's "Sending…" or "Failed to send".
+        self._remove_pending_indicator()
+        # Strip the icon we prepended in _add_failed_indicator.
+        if self._ts_box is not None:
+            first = self._ts_box.get_first_child()
+            if isinstance(first, Gtk.Image):
+                self._ts_box.remove(first)
+
+    def transition_to_sent(self, server_msg: dict):
+        """Promote a pending bubble to a real, sent one. Replaces the
+        local synthetic msg with the server response, removes the
+        pending visual marker, and lazily builds the reactions row +
+        context menu (deferred from __init__ for pending bubbles)."""
+        self.is_pending = False
+        self.is_failed  = False
+        self.msg = server_msg
+        self._bubble_inner.remove_css_class("pending")
+        self._remove_pending_indicator()
+        self._remove_failed_indicator()
+        self._build_reactions_row()
+        self._render_reactions(server_msg.get("reactions", []),
+                               server_msg.get("favorited_by", []))
+        self._wire_context_menu()
+
+    def transition_to_failed(self):
+        """Move a pending bubble to the failed state — error caption +
+        Retry/Discard buttons."""
+        self.is_pending = False
+        self.is_failed  = True
+        self._remove_pending_indicator()
+        self._bubble_inner.remove_css_class("pending")
+        self._bubble_inner.add_css_class("failed")
+        self._add_failed_indicator()
+
+    def transition_to_pending(self):
+        """Re-enter the pending state (for retry from failed)."""
+        self.is_pending = True
+        self.is_failed  = False
+        self._remove_failed_indicator()
+        self._bubble_inner.remove_css_class("failed")
+        self._bubble_inner.add_css_class("pending")
+        self._add_pending_indicator()
+
+    def _action_retry(self):
+        cv = getattr(self.win, "_chat_view", None)
+        if cv is not None and hasattr(cv, "retry_pending_send"):
+            cv.retry_pending_send(self)
+
+    def _action_discard(self):
+        cv = getattr(self.win, "_chat_view", None)
+        if cv is not None and hasattr(cv, "discard_pending"):
+            cv.discard_pending(self)
+
     def _render_reactions(self, reactions: list, favorited_by: list):
         """Rebuild the reactions row from server data.
 
@@ -455,6 +625,8 @@ class MessageBubble(Gtk.Box):
         pill or the add-reaction button opens the sheet. This avoids the
         old mix of tooltip / tap-pill-to-switch / tap-empty-row-to-inspect
         affordances that didn't translate to touch."""
+        if self._reactions_box is None:
+            return   # pending bubble — nothing to render
         # Clear
         child = self._reactions_box.get_first_child()
         while child:

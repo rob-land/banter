@@ -15,7 +15,14 @@ from .constants import (
 
 
 class GroupMeAPI:
-    def __init__(self, token: str = None, on_unauthorized=None):
+    # Retry config for `_req`. Only GETs are retried (writes use
+    # source_guid for idempotency on the GroupMe side, but a few
+    # endpoints — like /like — don't, so playing it safe).
+    RETRY_BACKOFF_S    = (0.5, 1.5)   # seconds between attempts
+    RETRY_HTTP_CODES   = (502, 503, 504)
+
+    def __init__(self, token: str = None, on_unauthorized=None,
+                 on_online=None, on_offline=None):
         self.token = token
         # Optional callback fired ONCE when a token-bearing request
         # comes back HTTP 401. Lets the UI layer surface a session-
@@ -26,6 +33,14 @@ class GroupMeAPI:
         # via GLib.idle_add).
         self._on_unauthorized   = on_unauthorized
         self._unauthorized_seen = False
+        # Online/offline state callbacks. Fired only on transitions
+        # (offline → online / online → offline) so the UI doesn't get
+        # spammed with redundant updates from a busy request loop.
+        # Both run on the worker thread that did the request — same
+        # idle_add convention as on_unauthorized.
+        self._on_online    = on_online
+        self._on_offline   = on_offline
+        self._currently_online = True   # assumed-online at startup
 
     # ── low-level ──
     def _req(self, method: str, endpoint: str, data=None,
@@ -60,39 +75,103 @@ class GroupMeAPI:
         body = (json.dumps(data, ensure_ascii=False).encode("utf-8")
                 if data is not None else None)
 
-        try:
-            with urllib.request.urlopen(req, body, timeout=30) as r:
-                raw = r.read().decode()
-                dbg("← %d  %d bytes", r.status, len(raw))
-                # DELETE and some other endpoints return 204 No Content
-                # with an empty body — synthesize a meta wrapper so
-                # callers can use the usual _ok() / response shape.
-                if not raw.strip():
-                    return {"meta": {"code": r.status}, "response": None}
-                parsed = json.loads(raw)
-                if DEBUG:
-                    code = parsed.get("meta", {}).get("code", "?")
-                    dbg("  meta.code=%s", code)
-                    if parsed.get("meta", {}).get("errors"):
-                        dbg("  errors: %s",
-                            parsed["meta"]["errors"])
-                return parsed
-        except urllib.error.HTTPError as e:
-            raw = ""
+        # Retry transient failures (network errors and 502/503/504) for
+        # GET only. Writes typically use source_guid for server-side
+        # dedup but a few endpoints (likes, pins) don't, so we don't
+        # gamble on retrying mutations.
+        # 10s per attempt — long enough for a slow mobile connection,
+        # short enough that a network outage surfaces in the offline
+        # banner within ~10 s instead of the urllib default 30 s.
+        retryable = (method == "GET")
+        last_exc  = None
+        for attempt in range(len(self.RETRY_BACKOFF_S) + 1):
             try:
-                raw = e.read().decode()
-                parsed = json.loads(raw)
-                dbg("← HTTP %d  body: %s", e.code, raw[:400])
-                self._maybe_fire_unauthorized(e.code)
-                return parsed
-            except Exception:
-                dbg("← HTTP %d  (non-JSON body: %s)", e.code, raw[:200])
-                self._maybe_fire_unauthorized(e.code)
-                return {"meta": {"code": e.code, "errors": [str(e)]}}
+                with urllib.request.urlopen(req, body, timeout=10) as r:
+                    raw = r.read().decode()
+                    dbg("← %d  %d bytes", r.status, len(raw))
+                    # DELETE and some other endpoints return 204 No Content
+                    # with an empty body — synthesize a meta wrapper so
+                    # callers can use the usual _ok() / response shape.
+                    self._fire_online()
+                    if not raw.strip():
+                        return {"meta": {"code": r.status}, "response": None}
+                    parsed = json.loads(raw)
+                    if DEBUG:
+                        code = parsed.get("meta", {}).get("code", "?")
+                        dbg("  meta.code=%s", code)
+                        if parsed.get("meta", {}).get("errors"):
+                            dbg("  errors: %s",
+                                parsed["meta"]["errors"])
+                    return parsed
+            except urllib.error.HTTPError as e:
+                # We got a response — server is reachable, so we're
+                # online. Then decide whether to retry by code.
+                self._fire_online()
+                if (retryable and e.code in self.RETRY_HTTP_CODES
+                        and attempt < len(self.RETRY_BACKOFF_S)):
+                    dbg("← HTTP %d  retrying in %ss",
+                        e.code, self.RETRY_BACKOFF_S[attempt])
+                    time.sleep(self.RETRY_BACKOFF_S[attempt])
+                    continue
+                raw = ""
+                try:
+                    raw = e.read().decode()
+                    parsed = json.loads(raw)
+                    dbg("← HTTP %d  body: %s", e.code, raw[:400])
+                    self._maybe_fire_unauthorized(e.code)
+                    return parsed
+                except Exception:
+                    dbg("← HTTP %d  (non-JSON body: %s)", e.code, raw[:200])
+                    self._maybe_fire_unauthorized(e.code)
+                    return {"meta": {"code": e.code, "errors": [str(e)]}}
+            except Exception as e:
+                last_exc = e
+                dbg("← EXCEPTION: %s", e)
+                # Surface offline immediately on the first failure so
+                # the user sees the banner during retries, not only
+                # after they exhaust. _fire_offline is idempotent at
+                # the transition level, so calling it on each attempt
+                # is harmless. If a retry succeeds, _fire_online will
+                # hide the banner before _req returns.
+                self._fire_offline()
+                if retryable and attempt < len(self.RETRY_BACKOFF_S):
+                    time.sleep(self.RETRY_BACKOFF_S[attempt])
+                    continue
+                log.exception("Unexpected error in _req(%s %s)",
+                              method, endpoint)
+                return {"meta": {"code": 0, "errors": [str(e)]}}
+        # Loop exited without returning (only happens if all retry
+        # paths fall through — defensive).
+        self._fire_offline()
+        return {"meta": {"code": 0, "errors": [str(last_exc) if last_exc else "request failed"]}}
+
+    def _fire_online(self):
+        """Mark the connection healthy. Fires `on_online` only on the
+        offline → online transition so the UI doesn't get spammed."""
+        if self._currently_online:
+            return
+        self._currently_online = True
+        cb = self._on_online
+        if cb is None:
+            return
+        try:
+            cb()
         except Exception as e:
-            dbg("← EXCEPTION: %s", e)
-            log.exception("Unexpected error in _req(%s %s)", method, endpoint)
-            return {"meta": {"code": 0, "errors": [str(e)]}}
+            dbg("on_online callback raised: %s", e)
+
+    def _fire_offline(self):
+        """Mark the connection unhealthy after a request fully fails.
+        Fires `on_offline` only on the online → offline transition."""
+        if not self._currently_online:
+            return
+        self._currently_online = False
+        cb = self._on_offline
+        if cb is None:
+            return
+        try:
+            cb()
+        except Exception as e:
+            dbg("on_offline callback raised: %s", e)
 
     def _maybe_fire_unauthorized(self, code: int):
         """Fire `on_unauthorized` exactly once per session when a token-
@@ -235,8 +314,16 @@ class GroupMeAPI:
         r = self._req("GET", f"/groups/{gid}/messages", params=params)
         return r.get("response", {}).get("messages", [])
 
-    def send_message(self, gid, text: str, attachments=None):
-        msg = {"source_guid": f"{int(time.time()*1000)}", "text": text}
+    def send_message(self, gid, text: str, attachments=None,
+                     source_guid: str = None):
+        """Send a group message. `source_guid` lets the caller force a
+        specific dedup key — pass through the same value on a retry and
+        GroupMe will silently dedupe if the original send actually
+        succeeded but the response was lost."""
+        msg = {
+            "source_guid": source_guid or f"{int(time.time()*1000)}",
+            "text"       : text,
+        }
         if attachments:
             msg["attachments"] = attachments
         r = self._req("POST", f"/groups/{gid}/messages", {"message": msg})
@@ -410,9 +497,11 @@ class GroupMeAPI:
         r = self._req("GET", "/direct_messages", params=params)
         return r.get("response", {}).get("direct_messages", [])
 
-    def send_dm(self, recipient_id: str, text: str, attachments=None):
+    def send_dm(self, recipient_id: str, text: str, attachments=None,
+                source_guid: str = None):
+        """Send a DM. See send_message for the source_guid contract."""
         msg = {
-            "source_guid"  : f"{int(time.time()*1000)}",
+            "source_guid"  : source_guid or f"{int(time.time()*1000)}",
             "recipient_id" : str(recipient_id),
             "text"         : text,
         }

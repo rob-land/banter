@@ -2,6 +2,7 @@
 
 import mimetypes
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 import gi
@@ -107,6 +108,13 @@ class ChatView(Gtk.Box):
         self._typing_clear_id = 0
         # Outbound throttling: send at most one pulse every TYPING_PULSE_INTERVAL.
         self._last_typing_sent: float = 0.0
+        # Pending sends in flight: source_guid → MessageBubble. Used to
+        # resolve the race between the send's HTTP response and the
+        # /user/{uid} push echo of the same message — whichever arrives
+        # first promotes the pending bubble to "sent" and cancels the
+        # other path. Keyed by source_guid (not the temp id) because
+        # the push echo carries source_guid but a different real id.
+        self._pending_by_guid: dict = {}
         self._build_widgets()
         self._fetch_pinned()
         # Subscribe the DM-specific Faye channel so typing pulses for
@@ -465,6 +473,11 @@ class ChatView(Gtk.Box):
                 if sender_uid and sender_uid in self._typing_users:
                     self._typing_users.pop(sender_uid, None)
                     self._refresh_typing_indicator()
+                # Optimistic-send echo: if this is the push echo of a
+                # message we just sent, transition the in-flight pending
+                # bubble to sent rather than appending a duplicate.
+                if self._resolve_pending_via_echo(subject):
+                    return
                 msg_id = str(subject.get("id", ""))
                 if msg_id and msg_id in self._bubble_map:
                     # Already displayed (we sent it ourselves or received a duplicate)
@@ -991,18 +1004,6 @@ class ChatView(Gtk.Box):
                 pass
         return bubble
 
-    def _add_bubble(self, msg, append=True):
-        """Legacy single-message helper (used by _on_sent)."""
-        d = self._msg_date(msg)
-        if append:
-            if d != self._newest_date:
-                self._msgs_box.append(self._make_date_sep(d))
-                self._newest_date = d
-            self._msgs_box.append(self._make_bubble(msg))
-        else:
-            self._msgs_box.insert_child_after(
-                self._make_bubble(msg), self._load_more_btn)
-
     def _on_upper_changed(self, adj, _pspec):
         """Re-pin to the bottom when the scrollable area grows while
         the user is already at the bottom. Triggered by GTK measuring
@@ -1519,14 +1520,11 @@ class ChatView(Gtk.Box):
         mentions_att = self._build_mentions_attachment(buf, leading)
         self._clear_pending_mentions()
 
-        buf.set_text("")
         atts = []
         if self._pending_img_url:
             atts.append({"type": "image", "url": self._pending_img_url})
-            self._clear_attachment()
         elif self._pending_file_id:
             atts.append({"type": "file", "file_id": self._pending_file_id})
-            self._clear_attachment()
         if mentions_att:
             atts.append(mentions_att)
         if self._reply_target is not None:
@@ -1537,28 +1535,121 @@ class ChatView(Gtk.Box):
                     "reply_id":      reply_id,
                     "base_reply_id": reply_id,
                 })
-            self.set_reply_target(None)
+
+        # Optimistic UI: build a synthetic message dict and append a
+        # pending bubble immediately. The user sees their message in
+        # the chat instantly even if the network is slow or down — and
+        # if the send ultimately fails they can retry/discard from the
+        # bubble itself instead of losing their typed text.
+        src_guid = uuid.uuid4().hex
+        pending_id = f"pending:{src_guid}"
+        pending_msg = {
+            "id"          : pending_id,
+            "user_id"     : str(self._me),
+            "name"        : (self._win._current_user or {}).get("name", ""),
+            "avatar_url"  : (self._win._current_user or {}).get("avatar_url", ""),
+            "text"        : text,
+            "attachments" : list(atts),
+            "created_at"  : int(time.time()),
+            "source_guid" : src_guid,
+        }
+        self._append_pending_bubble(pending_msg)
+
+        # Now safe to wipe the compose state — the bubble holds
+        # everything we need to retry on failure.
+        buf.set_text("")
+        self._clear_attachment()
+        self.set_reply_target(None)
+
+        # Dispatch the actual API call. Result handler transitions the
+        # bubble in-place rather than appending a fresh one.
+        self._dispatch_send(pending_msg)
+
+    def _append_pending_bubble(self, msg: dict):
+        d = self._msg_date(msg)
+        if d != self._newest_date:
+            self._msgs_box.append(self._make_date_sep(d))
+            self._newest_date = d
+        bubble = MessageBubble(
+            msg, self._me, self._gid, self._api, self._win,
+            pending=True)
+        self._bubble_map[str(msg["id"])] = bubble
+        self._pending_by_guid[msg["source_guid"]] = bubble
+        self._msgs_box.append(bubble)
+        self._scroll_bottom()
+
+    def _dispatch_send(self, pending_msg: dict):
+        """Worker-thread send. On completion, transitions the bubble
+        in-place via _on_send_result."""
+        text     = pending_msg["text"]
+        atts     = pending_msg["attachments"] or None
+        src_guid = pending_msg["source_guid"]
+        is_dm    = self._is_dm
+        other    = self._other_uid
+        gid      = self._gid
 
         def worker():
-            if self._is_dm:
-                msg = self._api.send_dm(
-                    self._other_uid, text, atts or None)
+            if is_dm:
+                msg = self._api.send_dm(other, text, atts,
+                                          source_guid=src_guid)
             else:
-                msg = self._api.send_message(
-                    self._gid, text, atts or None)
-            if msg:
-                GLib.idle_add(self._on_sent, msg)
-            else:
-                GLib.idle_add(
-                    lambda: self._win.toast("Failed to send message"))
+                msg = self._api.send_message(gid, text, atts,
+                                               source_guid=src_guid)
+            GLib.idle_add(self._on_send_result, src_guid, msg)
 
         run_in_background(worker)
 
-    def _on_sent(self, msg):
-        self._add_bubble(msg, append=True)
-        if msg:
-            self._newest_id = msg["id"]
-        self._scroll_bottom()
+    def _on_send_result(self, src_guid: str, server_msg):
+        """Handle the API response for an optimistic pending send."""
+        bubble = self._pending_by_guid.pop(src_guid, None)
+        if bubble is None:
+            # Already resolved — usually because the push echo
+            # (line.create on /user/{uid}) arrived first and called
+            # _resolve_pending_via_echo, which pops the entry.
+            return False
+        if server_msg:
+            old_id = str(bubble.msg.get("id", ""))
+            new_id = str(server_msg["id"])
+            self._bubble_map.pop(old_id, None)
+            self._bubble_map[new_id] = bubble
+            bubble.transition_to_sent(server_msg)
+            self._newest_id = server_msg["id"]
+        else:
+            bubble.transition_to_failed()
+        return False   # one-shot idle_add
+
+    def _resolve_pending_via_echo(self, subject: dict) -> bool:
+        """If `subject` is the push-stream echo of a still-pending
+        send, transition that bubble to sent and return True so the
+        caller skips its usual append-new path. Match by source_guid
+        (the temp id is client-side only)."""
+        guid = str(subject.get("source_guid", ""))
+        if not guid:
+            return False
+        bubble = self._pending_by_guid.pop(guid, None)
+        if bubble is None:
+            return False
+        old_id = str(bubble.msg.get("id", ""))
+        new_id = str(subject.get("id", ""))
+        self._bubble_map.pop(old_id, None)
+        self._bubble_map[new_id] = bubble
+        bubble.transition_to_sent(subject)
+        return True
+
+    def retry_pending_send(self, bubble):
+        """Re-enter the pending state and re-send. Keeps the original
+        source_guid so the server dedupes if the original send
+        actually succeeded but we lost the response."""
+        bubble.transition_to_pending()
+        self._pending_by_guid[bubble.msg["source_guid"]] = bubble
+        self._dispatch_send(bubble.msg)
+
+    def discard_pending(self, bubble):
+        self._pending_by_guid.pop(bubble.msg.get("source_guid", ""), None)
+        self._bubble_map.pop(str(bubble.msg.get("id", "")), None)
+        parent = bubble.get_parent()
+        if parent is not None:
+            parent.remove(bubble)
 
     # ── Attachments (image / file) ──
     def _conv_id(self) -> str:

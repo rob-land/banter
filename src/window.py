@@ -76,7 +76,9 @@ class MainWindow(Adw.ApplicationWindow):
         acc = self._config.get_active_account()
         if acc:
             self._api = GroupMeAPI(acc["token"],
-                                    on_unauthorized=self._on_session_expired)
+                                    on_unauthorized=self._on_session_expired,
+                                    on_online=self._on_api_online,
+                                    on_offline=self._on_api_offline)
             spinner = Gtk.Spinner(spinning=True, margin_top=120,
                                    halign=Gtk.Align.CENTER)
             self._toast_overlay.set_child(spinner)
@@ -164,7 +166,9 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_login(self, token: str, user: dict):
         self._login_dialog = None
         self._api = GroupMeAPI(token,
-                                on_unauthorized=self._on_session_expired)
+                                on_unauthorized=self._on_session_expired,
+                                on_online=self._on_api_online,
+                                on_offline=self._on_api_offline)
         self._config.add_account(token, user)
         self._build_main_ui(user)
 
@@ -173,6 +177,24 @@ class MainWindow(Adw.ApplicationWindow):
         Runs on the worker thread that did the request — bounce to the
         main thread, then drop the dead account and re-prompt sign-in."""
         GLib.idle_add(self._handle_session_expired)
+
+    # ── Connectivity banner ──
+    def _on_api_online(self):
+        """Fired (worker thread) on the offline → online API transition."""
+        GLib.idle_add(self._set_offline_banner, False)
+
+    def _on_api_offline(self):
+        """Fired (worker thread) on the online → offline API transition,
+        i.e. after a request exhausts its retries on a network error."""
+        GLib.idle_add(self._set_offline_banner, True)
+
+    def _set_offline_banner(self, offline: bool):
+        # The banner is created in _build_main_ui; early failures from
+        # the startup verify() may fire callbacks before the UI exists.
+        banner = getattr(self, "_offline_banner", None)
+        if banner is not None:
+            banner.set_revealed(bool(offline))
+        return False   # drop the idle_add
 
     def _handle_session_expired(self):
         try:
@@ -220,7 +242,20 @@ class MainWindow(Adw.ApplicationWindow):
         self._split.set_content(self._content_nav)
 
         self._show_placeholder()
-        self._toast_overlay.set_child(self._split)
+
+        # Wrap the split view in a vertical Box so the offline banner
+        # can sit above everything — including the sidebar in collapsed
+        # mode on small screens. Adw.Banner reveals/hides itself with
+        # an animation; default state is hidden.
+        self._offline_banner = Adw.Banner()
+        self._offline_banner.set_title(
+            "Offline — actions may fail until the connection returns")
+        self._offline_banner.set_revealed(False)
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        main_box.append(self._offline_banner)
+        main_box.append(self._split)
+        self._toast_overlay.set_child(main_box)
 
         # ── Adaptive breakpoint ──
         # Without this, NavigationSplitView never auto-collapses because

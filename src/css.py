@@ -23,6 +23,16 @@ APP_CSS = """
 .search-match .msg-bubble {
     box-shadow: inset 0 0 0 2px alpha(#f5c211, 0.85);
 }
+/* Optimistic UI for unsent / failed messages. .pending fades the
+ * bubble while the API call is in flight. .failed marks the bubble
+ * with a red error border + a Retry/Discard action row appended
+ * inside it. */
+.msg-bubble.pending {
+    opacity: 0.6;
+}
+.msg-bubble.failed {
+    box-shadow: inset 0 0 0 2px alpha(@error_color, 0.6);
+}
 
 /* ── Reaction pills ── */
 .reaction-pill {
