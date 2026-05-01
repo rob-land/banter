@@ -185,7 +185,7 @@ class GroupDetailDialog(StandardDialog):
 
 class NewGroupDialog(StandardDialog):
     def __init__(self, api, parent):
-        super().__init__(title="New Group", width=380, height=-1)
+        super().__init__(title="New Group", width=380, height=420)
         self._api    = api
         self._parent = parent
 

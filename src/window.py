@@ -683,7 +683,9 @@ class MainWindow(Adw.ApplicationWindow):
             ts = (conv.get("last_message", {}).get("created_at") or
                   conv.get("updated_at") or 0)
         else:
-            ts = conv.get("messages", {}).get("last_message_created_at") or 0
+            ts = (conv.get("messages", {}).get("last_message_created_at") or
+                  conv.get("updated_at") or
+                  conv.get("created_at") or 0)
         try:
             return int(ts)
         except (TypeError, ValueError):
