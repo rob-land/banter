@@ -38,7 +38,7 @@ def dbg(msg: str, *args):
 # ── App identity ─────────────────────────────────────────────────────
 APP_ID      = "land.rob.Banter"
 APP_NAME    = "Banter"
-APP_VERSION = "1.0.0"
+from ._version import __version__ as APP_VERSION
 
 # ── Paths ────────────────────────────────────────────────────────────
 # Respect XDG Base Directory spec — Flatpak sets these env vars to point

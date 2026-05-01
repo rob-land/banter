@@ -15,6 +15,12 @@ configure_file(
   install_mode: 'rwxr-xr-x',
 )
 
+version_py = configure_file(
+  input:  '_version.py.in',
+  output: '_version.py',
+  configuration: {'VERSION': meson.project_version()},
+)
+
 banter_sources = files(
   '__init__.py',
   'application.py',
@@ -56,6 +62,6 @@ dialog_sources = files(
   'dialogs/settings.py',
 )
 
-python.install_sources(banter_sources,  subdir: 'banter')
+python.install_sources(banter_sources + [version_py], subdir: 'banter')
 python.install_sources(widget_sources,  subdir: 'banter/widgets')
 python.install_sources(dialog_sources,  subdir: 'banter/dialogs')
