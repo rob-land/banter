@@ -60,6 +60,10 @@ class MainWindow(Adw.ApplicationWindow):
         # the value from here on construction. In-memory only — drafts
         # don't persist across app restarts.
         self._drafts       : dict = {}
+        # poll_id → list[PollCard] for currently-mounted poll widgets.
+        # PollCards register on __init__; the list is cleared whenever a
+        # new ChatView is built (the previous chat's cards die with it).
+        self._poll_cards   : dict = {}
         self._bg_poll_id   = None
         self._push         = None   # singleton GroupMePush for the whole session
         # Pending GLib.timeout id for the debounced offline-banner
@@ -449,11 +453,33 @@ class MainWindow(Adw.ApplicationWindow):
             self._push.stop()
             self._push = None
 
+    # ── Poll card registry (live-update wiring) ──
+    def register_poll_card(self, poll_id, card):
+        """Called by PollCard.__init__ so push poll.vote events can
+        find the live widget. The list is cleared whenever a new
+        ChatView is built, so we don't accumulate dead cards."""
+        if not poll_id:
+            return
+        self._poll_cards.setdefault(str(poll_id), []).append(card)
+
+    def _clear_poll_cards(self):
+        self._poll_cards.clear()
+
     def _on_push_event(self, data: dict):
         """Route push events to the active ChatView (if any)."""
         ev_type = data.get("type", "")
         subject = data.get("subject", {})
         dbg("push event: type=%s", ev_type)
+
+        # Live poll vote — push fires on every vote (own + others) and
+        # carries the full poll snapshot under subject.poll.data. Hand
+        # it to any mounted PollCards for the same poll_id.
+        if ev_type == "poll.vote":
+            poll_data = (subject.get("poll") or {}).get("data") or {}
+            pid = str(poll_data.get("id", ""))
+            for card in list(self._poll_cards.get(pid, ())):
+                card.apply_push_update(poll_data)
+            return
 
         # Delegate to the currently open ChatView
         if self._chat_view:
@@ -922,6 +948,7 @@ class MainWindow(Adw.ApplicationWindow):
         )
         cv.set_vexpand(True)
         self._content_wrap.append(cv)
+        self._clear_poll_cards()
         self._chat_view = cv
 
     # ── Group detail ──
@@ -1036,6 +1063,7 @@ class MainWindow(Adw.ApplicationWindow):
         )
         cv.set_vexpand(True)
         self._content_wrap.append(cv)
+        self._clear_poll_cards()
         self._chat_view = cv
 
     # ── Search ──

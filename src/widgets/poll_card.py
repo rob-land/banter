@@ -93,6 +93,10 @@ class PollCard(Gtk.Box):
 
         if self._poll_id:
             self._fetch()
+            # Register so push poll.vote events route here.
+            reg = getattr(window, "register_poll_card", None)
+            if reg:
+                reg(self._poll_id, self)
         else:
             self._title_lbl.set_label("Poll unavailable")
 
@@ -250,4 +254,16 @@ class PollCard(Gtk.Box):
         self._voted_ids = set(selection)
         if poll:
             self._poll = poll
+        self._render()
+
+    # ── Live push update ──────────────────────────────────────────────
+    def apply_push_update(self, poll_data: dict):
+        """Called by MainWindow when a poll.vote push event lands for
+        our poll_id. The push payload is the full poll snapshot — same
+        shape as get_poll's response — so we replace _poll and re-
+        render. _voted_ids is preserved (push doesn't carry per-voter
+        info for anonymous polls)."""
+        if not isinstance(poll_data, dict) or not poll_data:
+            return
+        self._poll = poll_data
         self._render()
