@@ -8,11 +8,12 @@ gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio, Gdk, Pango
 
-from .constants import APP_NAME, APP_VERSION, DEBUG, dbg, esc
+from .constants import APP_NAME, APP_VERSION, DEBUG, DEMO, dbg, esc
 from .async_utils import run_in_background
 from .config import Config
 from .api import GroupMeAPI
 from .push import GroupMePush
+from .mock_api import MockGroupMeAPI
 from .helpers import (
     set_avatar_from_url, ensure_packs_loaded, is_hidden_system_message)
 from .widgets.base import StandardDialog
@@ -77,6 +78,11 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._toast_overlay = Adw.ToastOverlay()
         self.set_content(self._toast_overlay)
+
+        if DEMO:
+            self._api = MockGroupMeAPI()
+            self._build_main_ui(self._api.get_me())
+            return
 
         acc = self._config.get_active_account()
         if acc:
@@ -423,6 +429,8 @@ class MainWindow(Adw.ApplicationWindow):
     # ── Application-level push client (singleton) ──
     def _start_push(self):
         """Create and start the shared push client for this session."""
+        if DEMO:
+            return
         if self._push or not self._api:
             return
         user_id = str(self._current_user.get("id", ""))
@@ -1061,6 +1069,8 @@ class MainWindow(Adw.ApplicationWindow):
     BG_POLL_INTERVAL_MS = 30_000
 
     def _start_bg_poll(self):
+        if DEMO:
+            return
         if self._bg_poll_id:
             GLib.source_remove(self._bg_poll_id)
         self._bg_poll_id = GLib.timeout_add(

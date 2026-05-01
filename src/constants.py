@@ -18,9 +18,10 @@ from pathlib import Path
 # ── Debug setup ─────────────────────────────────────────────────────
 _raw_args = sys.argv[1:]
 DEBUG = any(a in ("--debug", "--verbose", "-v", "-d") for a in _raw_args)
+DEMO  = any(a in ("--demo",) for a in _raw_args)
 sys.argv = [sys.argv[0]] + [
     a for a in _raw_args
-    if a not in ("--debug", "--verbose", "-v", "-d")
+    if a not in ("--debug", "--verbose", "-v", "-d", "--demo")
 ]
 
 logging.basicConfig(

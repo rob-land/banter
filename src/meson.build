@@ -31,6 +31,7 @@ banter_sources = files(
   'css.py',
   'helpers.py',
   'main.py',
+  'mock_api.py',
   'oauth.py',
   'push.py',
   'secrets.py',

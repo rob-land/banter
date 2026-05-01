@@ -24,6 +24,11 @@ install_data(
 )
 
 install_data(
+  'banter-demo.json',
+  install_dir: datadir / 'banter',
+)
+
+install_data(
   'icons/hicolor/scalable/apps/land.rob.Banter.svg',
   install_dir: datadir / 'icons' / 'hicolor' / 'scalable' / 'apps',
 )
