@@ -59,6 +59,10 @@ class GroupMePush:
         self._thread     = None
         self._sock       = None          # raw ssl socket
         self._group_subs : set = set()
+        # DM subscriptions, keyed by the underscore-joined sorted-user-id
+        # pair (e.g. "118175628_139889463") — the suffix of the
+        # /direct_message/<key> Faye channel each DM uses for typing.
+        self._dm_subs    : set = set()
         # Frame-send lock so the worker thread's draining writes don't
         # interleave bytes with main-thread publish() calls (typing
         # pulses). Two concurrent sendalls on the same socket can corrupt
@@ -89,24 +93,45 @@ class GroupMePush:
         the recv side, and racing two recv()s on the same socket would
         corrupt frames. The worker's recv loop will pick up the
         subscribe response and harmlessly drop it (it doesn't match the
-        /user/ or /group/ event-forwarding filter)."""
+        /user/, /group/, or /direct_message/ event-forwarding filter)."""
         gid = str(group_id)
         is_new = gid not in self._group_subs
         self._group_subs.add(gid)
-        if is_new and self._client_id and self._sock is not None:
-            try:
-                self._faye_send([{
-                    "channel"     : "/meta/subscribe",
-                    "clientId"    : self._client_id,
-                    "subscription": f"/group/{gid}",
-                    "id"          : self._next_id(),
-                    "ext"         : {
-                        "access_token": self._token,
-                        "timestamp"   : int(time.time()),
-                    },
-                }])
-            except Exception as e:
-                dbg("push: live subscribe %s failed: %s", gid, e)
+        if is_new:
+            self._live_subscribe(f"/group/{gid}")
+
+    def subscribe_dm(self, channel_key: str):
+        """Add a /direct_message/<channel_key> subscription so DM typing
+        events for that conversation are delivered. `channel_key` is the
+        underscore-joined sorted-user-id pair, e.g. "118175628_139889463".
+
+        Same fire-and-forget pattern as subscribe_group — see that
+        method's docstring for why we don't recv the ack here."""
+        key = str(channel_key)
+        is_new = key not in self._dm_subs
+        self._dm_subs.add(key)
+        if is_new:
+            self._live_subscribe(f"/direct_message/{key}")
+
+    def _live_subscribe(self, channel: str):
+        """Send a /meta/subscribe frame on the live socket if one is up.
+        No-op when offline (the next reconnect picks up the channel from
+        _group_subs / _dm_subs)."""
+        if not (self._client_id and self._sock is not None):
+            return
+        try:
+            self._faye_send([{
+                "channel"     : "/meta/subscribe",
+                "clientId"    : self._client_id,
+                "subscription": channel,
+                "id"          : self._next_id(),
+                "ext"         : {
+                    "access_token": self._token,
+                    "timestamp"   : int(time.time()),
+                },
+            }])
+        except Exception as e:
+            dbg("push: live subscribe %s failed: %s", channel, e)
 
     def publish(self, channel: str, data: dict) -> bool:
         """Publish a Faye event to `channel`. Used for typing pulses.
@@ -135,6 +160,15 @@ class GroupMePush:
         publish — receivers maintain their own sliding-timeout window
         and auto-clear when no follow-up arrives."""
         return self.publish(f"/group/{group_id}", {
+            "type"    : "typing",
+            "user_id" : self._user_id,
+            "started" : int(time.time() * 1000),
+        })
+
+    def publish_typing_dm(self, channel_key: str):
+        """Emit a 'typing' pulse to /direct_message/<channel_key>. Same
+        decay convention as publish_typing_group."""
+        return self.publish(f"/direct_message/{channel_key}", {
             "type"    : "typing",
             "user_id" : self._user_id,
             "started" : int(time.time() * 1000),
@@ -402,6 +436,8 @@ class GroupMePush:
 
                 for gid in list(self._group_subs):
                     self._subscribe(f"/group/{gid}")
+                for ck in list(self._dm_subs):
+                    self._subscribe(f"/direct_message/{ck}")
 
                 # Send the single /meta/connect that starts the event stream
                 self._connect_ws()
@@ -425,12 +461,14 @@ class GroupMePush:
 
                         channel = ev.get("channel", "")
                         data    = ev.get("data")
-                        # Forward both /user/{uid} (line.create, reactions,
-                        # edits, etc.) and /group/{gid} (typing pulses,
-                        # group-only signals). ChatView's _on_push_event
-                        # is robust to duplicate line.create deliveries.
+                        # Forward /user/{uid} (line.create, reactions,
+                        # edits, etc.), /group/{gid} (group typing +
+                        # group-only signals), and /direct_message/<key>
+                        # (DM typing). ChatView's _on_push_event is
+                        # robust to duplicate line.create deliveries.
                         if data and (channel.startswith("/user/") or
-                                     channel.startswith("/group/")):
+                                     channel.startswith("/group/") or
+                                     channel.startswith("/direct_message/")):
                             GLib.idle_add(self._on_event, data)
 
             except Exception as e:

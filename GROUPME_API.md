@@ -445,9 +445,14 @@ no backoff. Only TCP-level / handshake errors trigger backoff.
   * `typing` events (only on the group channel — not on `/user/`)
   * Possibly duplicate `line.create` events (de-duped client-side via
     `_bubble_map`).
+* `/direct_message/<lo>_<hi>` — one per DM the user opens during the
+  session. Carries `typing` events for that DM. Note the **underscore**
+  separator — HTTP `conversation_id` uses `+`, but Faye disallows that
+  in channel names. Subscribed lazily on DM open and never unsubscribed.
 
-`push.py` forwards events from both `/user/` and `/group/` channels.
-ChatView's `_on_push_event` dispatches by `data.type`.
+`push.py` forwards events from `/user/`, `/group/`, and
+`/direct_message/` channels. ChatView's `_on_push_event` dispatches
+by `data.type`.
 
 ### Inbound event shapes
 
@@ -474,7 +479,8 @@ server emits. Body looks like:
              "user_reaction": {...}}}
 ```
 
-**`typing`** — flat (no `subject` envelope), only seen on `/group/{gid}`:
+**`typing`** — flat (no `subject` envelope), seen on both
+`/group/{gid}` and `/direct_message/<lo>_<hi>`:
 ```json
 {"type": "typing",
  "user_id": "<sender>",
@@ -483,12 +489,12 @@ server emits. Body looks like:
 
 There is no "stopped" event. Convention: sender re-pulses every ~3 s
 while typing; receivers auto-clear after ~5 s without a follow-up
-pulse, or on a `line.create` from the same sender.
+pulse, or on a new message from the same sender.
 
 ### Outbound publish (typing)
 
 ```json
-[{"channel":"/group/{gid}",
+[{"channel":"/group/{gid}"  OR  "/direct_message/<lo>_<hi>",
   "data":{"type":"typing","user_id":"<me>","started":<ms_unix>},
   "clientId":"<faye_client_id>",
   "id":"<seq>",
@@ -514,12 +520,9 @@ ack, because racing the worker's recv would cause torn frames. The ack
 is consumed by the worker's recv loop and harmlessly dropped (it
 doesn't match the `/user/` or `/group/` event-forwarding filter).
 
-### What does NOT come through push (as of 2026-04-30)
+### What does NOT come through push (as of 2026-05-01)
 
 * `pin` / `unpin` events
-* DM typing indicators (channel format unverified — likely
-  `/user/{me}` with a `conversation_id`, but capture a HAR before
-  wiring)
 
 ---
 
@@ -542,7 +545,7 @@ Faye channels:
 |---|---|
 | `/user/{my_user_id}` | own feed, all groups + DMs |
 | `/group/{gid}` | per-group feed (typing, etc.) |
-| DM-specific channel | unknown; not currently used |
+| `/direct_message/<lo>_<hi>` | per-DM feed (typing) — note `_` separator, NOT `+` |
 
 ---
 

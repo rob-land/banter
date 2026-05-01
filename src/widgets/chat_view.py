@@ -109,6 +109,13 @@ class ChatView(Gtk.Box):
         self._last_typing_sent: float = 0.0
         self._build_widgets()
         self._fetch_pinned()
+        # Subscribe the DM-specific Faye channel so typing pulses for
+        # this conversation start arriving. Group typing rides
+        # /group/{gid} which we already subscribe at app start.
+        if self._is_dm:
+            push = getattr(self._win, "_push", None)
+            if push is not None:
+                push.subscribe_dm(self._dm_channel_key())
 
     TYPING_PULSE_INTERVAL = 3.0   # s — outbound rate-limit per conversation
     TYPING_DECAY_SECS     = 5.0   # s — how long a received pulse keeps a user "typing"
@@ -328,6 +335,10 @@ class ChatView(Gtk.Box):
         key_ctrl.connect("key-pressed", self._on_key)
         self._entry.add_controller(key_ctrl)
 
+        # Typing-indicator outbound pulses (groups + DMs both publish).
+        self._entry.get_buffer().connect(
+            "changed", self._on_buf_changed_typing)
+
         # ── @-mention autocomplete (groups only) ──
         # The buffer-changed handler is wired up unconditionally so that
         # `@` keystrokes are still recognized after the (async) member
@@ -335,8 +346,6 @@ class ChatView(Gtk.Box):
         if not self._is_dm:
             self._entry.get_buffer().connect(
                 "changed", self._on_buf_changed)
-            self._entry.get_buffer().connect(
-                "changed", self._on_buf_changed_typing)
             self._fetch_members_for_mentions()
 
         # ── Assemble via Adw.ToolbarView so the compose + preview bars
@@ -433,12 +442,18 @@ class ChatView(Gtk.Box):
         dbg("push event: type=%s subject_keys=%s", ev_type, list(subject.keys()))
 
         if ev_type == "typing":
-            # /group/{gid} flat event: {"type":"typing","user_id":"...","started":<ms>}.
-            # Group-only for now — DM typing channel hasn't been captured.
-            if self._is_dm:
-                return
+            # Flat event — same shape on both /group/{gid} and
+            # /direct_message/<key>: {"type":"typing","user_id":"...","started":<ms>}.
             uid = str(data.get("user_id", ""))
             if not uid or uid == str(self._me):
+                return
+            # In DMs, the only legitimate typer is the other party. The
+            # active ChatView receives events for every subscribed DM
+            # channel (Banter accumulates DM subs across the session
+            # rather than unsubscribing on close), so a typing pulse
+            # for *another* DM whose user_id != self._other_uid would
+            # otherwise show up here as a stray indicator.
+            if self._is_dm and uid != str(self._other_uid):
                 return
             self._on_typing_received(uid)
             return
@@ -561,17 +576,28 @@ class ChatView(Gtk.Box):
         run_in_background(worker)
 
     # ── Typing indicator ──
+    def _dm_channel_key(self) -> str:
+        """Underscore-joined sorted-user-id pair used as the suffix of
+        the /direct_message/<key> Faye channel for this DM. Mirrors
+        the HTTP conversation_id format (`<lo>+<hi>`) but with `_` as
+        the separator — Faye channel names disallow `+`."""
+        try:
+            a, b = int(self._me), int(self._other_uid)
+            lo, hi = (a, b) if a < b else (b, a)
+            return f"{lo}_{hi}"
+        except (TypeError, ValueError):
+            return f"{self._me}_{self._other_uid}"
+
     def _on_buf_changed_typing(self, _buf):
         """Throttled outbound typing pulse. Pulses are best-effort — the
-        push client silently drops them while reconnecting."""
-        # Don't pulse if compose is empty (deleting the last char shouldn't
-        # tell anyone we're "typing"). Don't pulse from DMs — channel
-        # format is unverified.
-        if self._is_dm:
-            return
+        push client silently drops them while reconnecting.
+        Routes to /group/{gid} for groups or /direct_message/<key> for
+        DMs based on conversation type."""
         buf  = self._entry.get_buffer()
         text = buf.get_text(buf.get_start_iter(),
                               buf.get_end_iter(), False)
+        # Don't pulse if compose is empty (deleting the last char
+        # shouldn't tell anyone we're "typing").
         if not text.strip():
             return
         now = time.monotonic()
@@ -580,7 +606,11 @@ class ChatView(Gtk.Box):
         push = getattr(self._win, "_push", None)
         if push is None:
             return
-        if push.publish_typing_group(self._gid):
+        if self._is_dm:
+            ok = push.publish_typing_dm(self._dm_channel_key())
+        else:
+            ok = push.publish_typing_group(self._gid)
+        if ok:
             self._last_typing_sent = now
 
     def _on_typing_received(self, uid: str):
@@ -913,15 +943,25 @@ class ChatView(Gtk.Box):
         # the jump button will scroll to when the user is reading older
         # messages.
         appended_ids = []
+        cleared_typers = False
         for m in reversed(msgs):
             if is_hidden_system_message(m):
                 continue
+            # A user finishing a message implicitly ends their typing
+            # session. Drop them from the indicator so the bar doesn't
+            # linger after their message lands.
+            sender_uid = str(m.get("user_id", ""))
+            if sender_uid and sender_uid in self._typing_users:
+                self._typing_users.pop(sender_uid, None)
+                cleared_typers = True
             d = self._msg_date(m)
             if d != self._newest_date:
                 self._msgs_box.append(self._make_date_sep(d))
                 self._newest_date = d
             self._msgs_box.append(self._make_bubble(m))
             appended_ids.append(str(m.get("id", "")))
+        if cleared_typers:
+            self._refresh_typing_indicator()
         if msgs:
             self._newest_id   = msgs[0]["id"]
             self._newest_date = self._msg_date(msgs[0])
