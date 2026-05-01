@@ -358,7 +358,11 @@ class GroupMePush:
             "supportedConnectionTypes": ["websocket"],
             "id"                     : self._next_id(),
         }])
-        for msg in self._faye_recv():
+        # _faye_recv returns None when the socket is closed mid-recv
+        # (network drop). Treat that as a failed handshake — caller
+        # will reconnect.
+        frames = self._faye_recv() or []
+        for msg in frames:
             if msg.get("channel") == "/meta/handshake":
                 if msg.get("successful"):
                     self._client_id = msg["clientId"]
@@ -379,7 +383,9 @@ class GroupMePush:
                 "timestamp"   : int(time.time()),
             },
         }])
-        for msg in self._faye_recv():
+        # Same null-safety as _handshake: socket may be closed mid-recv.
+        frames = self._faye_recv() or []
+        for msg in frames:
             if msg.get("channel") == "/meta/subscribe":
                 ok = msg.get("successful", False)
                 dbg("push: subscribe %s → %s", channel, ok)

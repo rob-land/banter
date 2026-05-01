@@ -60,6 +60,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._drafts       : dict = {}
         self._bg_poll_id   = None
         self._push         = None   # singleton GroupMePush for the whole session
+        # Pending GLib.timeout id for the debounced offline-banner
+        # reveal. 0 means no reveal scheduled (so the next failure
+        # arms one).
+        self._offline_show_id = 0
 
         self.set_title(APP_NAME)
         self.set_default_size(980, 720)
@@ -179,22 +183,51 @@ class MainWindow(Adw.ApplicationWindow):
         GLib.idle_add(self._handle_session_expired)
 
     # ── Connectivity banner ──
+    # Don't show the banner immediately — DNS hiccups, brief Wi-Fi
+    # roams, and similar transient flaps fail and recover in well
+    # under 5 s. We delay the reveal so a flap that resolves before
+    # the grace expires is invisible to the user.
+    OFFLINE_GRACE_MS = 5_000
+
     def _on_api_online(self):
         """Fired (worker thread) on the offline → online API transition."""
-        GLib.idle_add(self._set_offline_banner, False)
+        GLib.idle_add(self._handle_online)
 
     def _on_api_offline(self):
-        """Fired (worker thread) on the online → offline API transition,
-        i.e. after a request exhausts its retries on a network error."""
-        GLib.idle_add(self._set_offline_banner, True)
+        """Fired (worker thread) on the online → offline API transition."""
+        GLib.idle_add(self._handle_offline)
 
-    def _set_offline_banner(self, offline: bool):
-        # The banner is created in _build_main_ui; early failures from
-        # the startup verify() may fire callbacks before the UI exists.
+    def _handle_offline(self):
+        banner = getattr(self, "_offline_banner", None)
+        if banner is None:
+            return False
+        # Already pending or shown — nothing to do.
+        if getattr(self, "_offline_show_id", 0):
+            return False
+        if banner.get_revealed():
+            return False
+        self._offline_show_id = GLib.timeout_add(
+            self.OFFLINE_GRACE_MS, self._reveal_offline_banner)
+        return False
+
+    def _reveal_offline_banner(self):
+        self._offline_show_id = 0
         banner = getattr(self, "_offline_banner", None)
         if banner is not None:
-            banner.set_revealed(bool(offline))
-        return False   # drop the idle_add
+            banner.set_revealed(True)
+        return False   # one-shot timer
+
+    def _handle_online(self):
+        # Cancel any pending reveal — the flap resolved before the
+        # grace window expired, so the user never needs to know.
+        show_id = getattr(self, "_offline_show_id", 0)
+        if show_id:
+            GLib.source_remove(show_id)
+            self._offline_show_id = 0
+        banner = getattr(self, "_offline_banner", None)
+        if banner is not None:
+            banner.set_revealed(False)
+        return False
 
     def _handle_session_expired(self):
         try:
@@ -254,6 +287,11 @@ class MainWindow(Adw.ApplicationWindow):
 
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         main_box.append(self._offline_banner)
+        # vexpand so the split view fills the remaining height after
+        # the banner. Without this, Gtk.Box gives the split only its
+        # natural minimum height and the bottom half of the window
+        # ends up empty.
+        self._split.set_vexpand(True)
         main_box.append(self._split)
         self._toast_overlay.set_child(main_box)
 
