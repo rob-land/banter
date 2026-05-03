@@ -5,18 +5,17 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import Gtk, Adw, GLib, Gdk
+from gi.repository import Gtk, Adw, GLib
 
 from ..constants import esc
 from ..async_utils import run_in_background
 from ..helpers import set_avatar_from_url
-from ..widgets.base import StandardDialog
 
 
-class MembersDialog(StandardDialog):
+class MembersDialog(Adw.PreferencesDialog):
     def __init__(self, api, group, me_id, parent):
-        super().__init__(title=f"Members – {group.get('name','')}",
-                         width=400, height=600)
+        super().__init__()
+        self.set_title(f"Members – {group.get('name','')}")
         self._api    = api
         self._group  = group
         self._me     = str(me_id)
@@ -24,35 +23,32 @@ class MembersDialog(StandardDialog):
         creator      = str(group.get("creator_user_id",""))
         self._is_owner = (creator == self._me)
 
-        body = self.set_scrolled_body(margin=12, spacing=12)
+        page = Adw.PreferencesPage()
+        self.add(page)
 
         # ── Add member (owner only) ──
+        # EntryRow's apply button (the inline ✓ arrow) is the HIG-native
+        # "submit this row" affordance; cleaner than a separate body
+        # button under the entry.
         if self._is_owner:
             add_grp = Adw.PreferencesGroup(title="Add Member")
             self._add_entry = Adw.EntryRow(title="Phone number or email")
+            self._add_entry.set_show_apply_button(True)
+            self._add_entry.connect("apply", self._add_member)
             add_grp.add(self._add_entry)
-            add_btn = Gtk.Button(label="Add")
-            add_btn.add_css_class("suggested-action")
-            add_btn.add_css_class("pill")
-            add_btn.set_margin_top(6)
-            add_btn.connect("clicked", self._add_member)
-            body.append(add_grp)
-            body.append(add_btn)
+            page.add(add_grp)
 
         # ── Member list ──
         self._members_grp = Adw.PreferencesGroup(
             title=f"Members ({len(group.get('members', []))})")
-        body.append(self._members_grp)
+        page.add(self._members_grp)
+        self._member_rows = []
         self._populate()
 
     def _populate(self):
-        # Clear existing rows
-        child = self._members_grp.get_first_child()
-        while child:
-            nxt = child.get_next_sibling()
-            try: self._members_grp.remove(child)
-            except Exception: pass
-            child = nxt
+        for row in self._member_rows:
+            self._members_grp.remove(row)
+        self._member_rows = []
 
         creator = str(self._group.get("creator_user_id",""))
         members = self._group.get("members", [])
@@ -104,6 +100,7 @@ class MembersDialog(StandardDialog):
                     row.add_suffix(rm_btn)
 
             self._members_grp.add(row)
+            self._member_rows.append(row)
 
     def _add_member(self, *_):
         query = self._add_entry.get_text().strip()
@@ -138,7 +135,3 @@ class MembersDialog(StandardDialog):
                 "Removed" if ok else "Failed to remove"))
 
         run_in_background(worker)
-
-
-# ─────────────────────────── Group Settings Dialog ───────────────
-

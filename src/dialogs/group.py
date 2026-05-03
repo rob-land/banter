@@ -13,23 +13,17 @@ from ..helpers import set_avatar_from_url
 from ..widgets.base import StandardDialog
 
 
-class GroupDetailDialog(StandardDialog):
+class GroupDetailDialog(Adw.PreferencesDialog):
     def __init__(self, api, group, me_id, parent):
-        super().__init__(title=group.get("name", "Group Details"),
-                         width=420, height=680)
+        super().__init__()
+        self.set_title(group.get("name", "Group Details"))
         self._api    = api
         self._group  = group
         self._me     = str(me_id)
         self._parent = parent
 
-        box = self.set_scrolled_body(margin=12, spacing=16)
-
-        # ── Group avatar ──
-        av = Adw.Avatar(size=80, text=esc(group.get("name","G")),
-                        show_initials=True)
-        av.set_halign(Gtk.Align.CENTER)
-        set_avatar_from_url(av, group.get("image_url"))
-        box.append(av)
+        page = Adw.PreferencesPage()
+        self.add(page)
 
         # ── Edit info ──
         info_grp = Adw.PreferencesGroup(title="Group Info")
@@ -39,51 +33,42 @@ class GroupDetailDialog(StandardDialog):
         self._desc_row = Adw.EntryRow(title="Description")
         self._desc_row.set_text(group.get("description",""))
         info_grp.add(self._desc_row)
-        box.append(info_grp)
+        page.add(info_grp)
 
         # ── Members ──
         self._members_grp = Adw.PreferencesGroup(title="Members")
+        page.add(self._members_grp)
         self._load_members()
-        box.append(self._members_grp)
 
         # ── Actions ──
         acts = Adw.PreferencesGroup(title="Actions")
 
-        save_row = Adw.ActionRow(title="Save Changes",
-                                  subtitle="Update group name/description")
-        save_row.set_activatable(True)
-        save_row.add_suffix(
-            Gtk.Image.new_from_icon_name("document-save-symbolic"))
+        save_row = Adw.ButtonRow(title="Save Changes",
+                                  start_icon_name="document-save-symbolic")
+        save_row.add_css_class("suggested-action")
         save_row.connect("activated", self._save)
         acts.add(save_row)
 
-        invite_row = Adw.ActionRow(title="Copy Invite Link",
-                                    subtitle=group.get("share_url",""))
-        invite_row.set_activatable(True)
-        invite_row.add_suffix(
-            Gtk.Image.new_from_icon_name("edit-copy-symbolic"))
+        invite_row = Adw.ButtonRow(title="Copy Invite Link",
+                                    start_icon_name="edit-copy-symbolic")
         invite_row.connect("activated", self._copy_invite)
         acts.add(invite_row)
 
         is_owner = str(group.get("creator_user_id","")) == self._me
         if is_owner:
-            del_row = Adw.ActionRow(title="Delete Group")
-            del_row.set_activatable(True)
-            del_row.add_css_class("error")
-            del_row.add_suffix(
-                Gtk.Image.new_from_icon_name("user-trash-symbolic"))
+            del_row = Adw.ButtonRow(title="Delete Group",
+                                     start_icon_name="user-trash-symbolic")
+            del_row.add_css_class("destructive-action")
             del_row.connect("activated", self._delete_group)
             acts.add(del_row)
         else:
-            leave_row = Adw.ActionRow(title="Leave Group")
-            leave_row.set_activatable(True)
-            leave_row.add_css_class("error")
-            leave_row.add_suffix(
-                Gtk.Image.new_from_icon_name("system-log-out-symbolic"))
+            leave_row = Adw.ButtonRow(title="Leave Group",
+                                       start_icon_name="system-log-out-symbolic")
+            leave_row.add_css_class("destructive-action")
             leave_row.connect("activated", self._leave_group)
             acts.add(leave_row)
 
-        box.append(acts)
+        page.add(acts)
 
     def _load_members(self):
         members = self._group.get("members", [])
@@ -185,9 +170,18 @@ class GroupDetailDialog(StandardDialog):
 
 class NewGroupDialog(StandardDialog):
     def __init__(self, api, parent):
-        super().__init__(title="New Group", width=380, height=420)
+        super().__init__(title="New Group", width=380, height=360)
         self._api    = api
         self._parent = parent
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda *_: self.close())
+        self.add_header_widget(cancel_btn, end=False)
+
+        self._create_btn = Gtk.Button(label="Create")
+        self._create_btn.add_css_class("suggested-action")
+        self._create_btn.connect("clicked", self._create)
+        self.add_header_widget(self._create_btn, end=True)
 
         box = self.set_scrolled_body(margin=16, spacing=16)
 
@@ -202,12 +196,6 @@ class NewGroupDialog(StandardDialog):
         self._share.set_active(True)
         grp.add(self._share)
         box.append(grp)
-
-        self._create_btn = Gtk.Button(label="Create Group")
-        self._create_btn.add_css_class("suggested-action")
-        self._create_btn.add_css_class("pill")
-        self._create_btn.connect("clicked", self._create)
-        box.append(self._create_btn)
 
     def _create(self, *_):
         name = self._name.get_text().strip()
@@ -227,7 +215,7 @@ class NewGroupDialog(StandardDialog):
 
     def _on_created(self, r):
         self._create_btn.set_sensitive(True)
-        self._create_btn.set_label("Create Group")
+        self._create_btn.set_label("Create")
         if r:
             self._parent.toast(f"Group '{r.get('name')}' created!")
             self.close()

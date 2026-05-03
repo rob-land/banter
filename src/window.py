@@ -132,7 +132,7 @@ class MainWindow(Adw.ApplicationWindow):
         btn.set_tooltip_text(
             "Unmute notifications" if muted else "Mute notifications")
 
-    # Timed-mute presets shown in the bell-button popover. Tuples of
+    # Timed-mute presets surfaced in the bell-button menu. Tuples of
     # (label, seconds) — seconds=-1 is "until I turn it back on" (the
     # config layer's permanent sentinel).
     _MUTE_PRESETS = (
@@ -141,45 +141,32 @@ class MainWindow(Adw.ApplicationWindow):
         ("Until I turn it back on", -1),
     )
 
-    def _on_mute_clicked(self, btn, conv_type: str, conv_id):
-        """Open a popover with timed-mute presets. Replaces the old
-        toggle behavior: clicking the bell now offers durations
-        instead of flipping straight to permanent-mute."""
-        pop = Gtk.Popover()
-        pop.set_parent(btn)
-        pop.set_has_arrow(True)
+    @staticmethod
+    def _mute_menu_item(label: str, secs: int) -> Gio.MenuItem:
+        item = Gio.MenuItem.new(label, None)
+        item.set_action_and_target_value(
+            "win.set-mute", GLib.Variant.new_int32(secs))
+        return item
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        box.set_margin_top(6); box.set_margin_bottom(6)
-        box.set_margin_start(6); box.set_margin_end(6)
-
-        # If currently muted, the first action is "Unmute"; otherwise
-        # we just offer the durations.
+    def _build_mute_menu(self, conv_type: str, conv_id) -> Gio.Menu:
+        """Build the bell-button menu. 'Unmute' appears in its own
+        section above the durations only when the conv is currently
+        muted, so users always see a meaningful first option."""
+        menu = Gio.Menu()
         if self.is_conv_muted(conv_type, conv_id):
-            unmute_btn = Gtk.Button(label="Unmute")
-            unmute_btn.add_css_class("flat")
-            unmute_btn.set_halign(Gtk.Align.FILL)
-            unmute_btn.connect("clicked",
-                self._on_mute_picked, conv_type, conv_id, 0, btn, pop)
-            box.append(unmute_btn)
-            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-            sep.set_margin_top(2); sep.set_margin_bottom(2)
-            box.append(sep)
-
+            sec = Gio.Menu()
+            sec.append_item(self._mute_menu_item("Unmute", 0))
+            menu.append_section(None, sec)
+        durations = Gio.Menu()
         for label, secs in self._MUTE_PRESETS:
-            b = Gtk.Button(label=label)
-            b.add_css_class("flat")
-            b.set_halign(Gtk.Align.FILL)
-            b.connect("clicked",
-                self._on_mute_picked, conv_type, conv_id, secs, btn, pop)
-            box.append(b)
+            durations.append_item(self._mute_menu_item(label, secs))
+        menu.append_section(None, durations)
+        return menu
 
-        pop.set_child(box)
-        pop.popup()
-
-    def _on_mute_picked(self, _src, conv_type, conv_id, secs,
-                        bell_btn, pop):
-        pop.popdown()
+    def _apply_mute(self, conv_type: str, conv_id, secs: int):
+        """Apply a mute change picked from the bell menu. Updates
+        config, the bell icon, the sidebar row, and the menu model
+        (so 'Unmute' appears/disappears on the next open)."""
         key = self._mute_key(conv_type, conv_id)
         if secs == 0:
             self._config.clear_mute(key)
@@ -190,13 +177,14 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             until = int(time.time()) + secs
             self._config.set_mute(key, until)
-            # Use the preset label for the toast — keeps the wording
-            # consistent with the popover the user just clicked.
             msg = f"Muted for {next(
                 (lbl for lbl, s in self._MUTE_PRESETS if s == secs),
                 f'{secs} seconds')}"
 
-        self._refresh_mute_button(bell_btn, conv_type, conv_id)
+        if self._mute_btn is not None:
+            self._refresh_mute_button(self._mute_btn, conv_type, conv_id)
+            self._mute_btn.set_menu_model(
+                self._build_mute_menu(conv_type, conv_id))
         row = self._rows.get(self._conv_key(conv_type, conv_id))
         if row is not None and hasattr(row, "set_muted"):
             row.set_muted(self._config.is_muted(key))
@@ -343,6 +331,8 @@ class MainWindow(Adw.ApplicationWindow):
         # safe-area handling, and integration with NavigationSplitView.
         self._content_tv   = Adw.ToolbarView()
         self._content_wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self._content_header = None
+        self._mute_btn = None
         self._content_tv.set_content(self._content_wrap)
         self._content_nav.set_child(self._content_tv)
         self._split.set_content(self._content_nav)
@@ -378,6 +368,8 @@ class MainWindow(Adw.ApplicationWindow):
             condition = Adw.BreakpointCondition.parse("max-width: 600sp")
             bp = Adw.Breakpoint.new(condition)
             bp.add_setter(self._split, "collapsed", True)
+            bp.add_setter(self._top_switcher, "visible", False)
+            bp.add_setter(self._bottom_switcher, "reveal", True)
             self.add_breakpoint(bp)
             dbg("Breakpoint added: collapse split view at max-width 600sp")
         except Exception as e:
@@ -428,7 +420,10 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_width_change(self, *_):
         """Fallback collapse logic for libadwaita < 1.4."""
         w = self.get_width()
-        self._split.set_collapsed(w < 600)
+        narrow = w < 600
+        self._split.set_collapsed(narrow)
+        self._top_switcher.set_visible(not narrow)
+        self._bottom_switcher.set_reveal(narrow)
 
     # ── Application-level push client (singleton) ──
     def _start_push(self):
@@ -583,6 +578,16 @@ class MainWindow(Adw.ApplicationWindow):
         hdr = Adw.HeaderBar()
         hdr.add_css_class("flat")
 
+        # Primary menu: pack first so it sits at the rightmost edge.
+        primary_menu = Gio.Menu()
+        primary_menu.append("Keyboard Shortcuts", "app.shortcuts")
+        primary_menu.append(f"About {APP_NAME}",  "app.about")
+        menu_btn = Gtk.MenuButton(icon_name="open-menu-symbolic")
+        menu_btn.add_css_class("flat")
+        menu_btn.set_tooltip_text("Main Menu")
+        menu_btn.set_menu_model(primary_menu)
+        hdr.pack_end(menu_btn)
+
         ng_btn = Gtk.Button(icon_name="list-add-symbolic")
         ng_btn.add_css_class("flat")
         ng_btn.set_tooltip_text("New Group")
@@ -591,10 +596,11 @@ class MainWindow(Adw.ApplicationWindow):
 
         acc_btn = Gtk.MenuButton(icon_name="system-users-symbolic")
         acc_btn.add_css_class("flat")
-        acc_btn.set_tooltip_text("Accounts")
-        menu = Gio.Menu()
+        # Hover surfaces who's signed in without a non-actionable menu row.
         user = self._current_user
-        menu.append(f"Signed in as {user.get('name','')}", None)
+        acc_btn.set_tooltip_text(
+            f"Signed in as {user.get('name','')}" if user.get("name") else "Accounts")
+        menu = Gio.Menu()
         menu.append("Manage Accounts", "app.accounts")
         menu.append("Sign Out", "app.sign-out")
         acc_btn.set_menu_model(menu)
@@ -656,10 +662,18 @@ class MainWindow(Adw.ApplicationWindow):
 
         body.append(self._stack)
 
-        tab_bar = Adw.ViewSwitcherBar()
-        tab_bar.set_stack(self._stack)
-        tab_bar.set_reveal(True)
-        body.append(tab_bar)
+        # Adaptive switchers: top in the header on wide layouts,
+        # bottom bar when the split collapses to a single column.
+        # Defaults match the wide state — the breakpoint flips them.
+        self._top_switcher = Adw.ViewSwitcher()
+        self._top_switcher.set_stack(self._stack)
+        self._top_switcher.set_policy(Adw.ViewSwitcherPolicy.NARROW)
+        hdr.set_title_widget(self._top_switcher)
+
+        self._bottom_switcher = Adw.ViewSwitcherBar()
+        self._bottom_switcher.set_stack(self._stack)
+        self._bottom_switcher.set_reveal(False)
+        body.append(self._bottom_switcher)
 
         sidebar_tv.set_content(body)
         sidebar_nav.set_child(sidebar_tv)
@@ -673,11 +687,12 @@ class MainWindow(Adw.ApplicationWindow):
         # mobile back-navigation button exist before any group is opened.
         hdr = Adw.HeaderBar()
         hdr.add_css_class("flat")
-        self._content_wrap.append(hdr)
+        self._content_tv.add_top_bar(hdr)
+        self._content_header = hdr
 
         page = Adw.StatusPage(
             icon_name="chat-message-new-symbolic",
-            title="Welcome to GroupMe",
+            title="Welcome to Banter",
             description="Select a group from the sidebar to start chatting."
         )
         page.set_vexpand(True)
@@ -688,6 +703,10 @@ class MainWindow(Adw.ApplicationWindow):
         if self._chat_view:
             self._chat_view.stop()
             self._chat_view = None
+        if self._content_header is not None:
+            self._content_tv.remove(self._content_header)
+            self._content_header = None
+        self._mute_btn = None
         child = self._content_wrap.get_first_child()
         while child:
             nxt = child.get_next_sibling()
@@ -925,17 +944,19 @@ class MainWindow(Adw.ApplicationWindow):
         find_btn.set_action_name("win.find")
         hdr.pack_end(find_btn)
 
-        # Mute toggle. Bell when notifications are on; bell-with-slash
+        # Mute menu. Bell when notifications are on; bell-with-slash
         # when the conv is muted. Tooltip flips to match.
-        mute_btn = Gtk.Button()
+        mute_btn = Gtk.MenuButton()
         mute_btn.add_css_class("flat")
         self._refresh_mute_button(mute_btn, "group", group["id"])
-        mute_btn.connect("clicked", self._on_mute_clicked, "group",
-                          str(group["id"]))
+        mute_btn.set_menu_model(
+            self._build_mute_menu("group", str(group["id"])))
+        self._mute_btn = mute_btn
         hdr.pack_end(mute_btn)
 
         self._content_nav.set_title(esc(group.get("name","Group")))
-        self._content_wrap.append(hdr)
+        self._content_tv.add_top_bar(hdr)
+        self._content_header = hdr
 
         # Register per-group window actions
         self._register_group_actions(group)
@@ -1037,15 +1058,17 @@ class MainWindow(Adw.ApplicationWindow):
         find_btn.set_action_name("win.find")
         hdr.pack_end(find_btn)
 
-        mute_btn = Gtk.Button()
+        mute_btn = Gtk.MenuButton()
         mute_btn.add_css_class("flat")
         self._refresh_mute_button(mute_btn, "dm", other_user_id)
-        mute_btn.connect("clicked", self._on_mute_clicked, "dm",
-                          str(other_user_id))
+        mute_btn.set_menu_model(
+            self._build_mute_menu("dm", str(other_user_id)))
+        self._mute_btn = mute_btn
         hdr.pack_end(mute_btn)
 
         self._content_nav.set_title(esc(name))
-        self._content_wrap.append(hdr)
+        self._content_tv.add_top_bar(hdr)
+        self._content_header = hdr
 
         self._register_dm_actions(other_user, other_user_id)
 
@@ -1293,7 +1316,7 @@ class MainWindow(Adw.ApplicationWindow):
             except Exception:
                 pass
 
-        for name in ("grp-members", "grp-pinned", "grp-jump-date", "grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
+        for name in ("set-mute", "grp-members", "grp-pinned", "grp-jump-date", "grp-album", "grp-events-view", "grp-event", "grp-poll", "grp-share", "grp-settings"):
             _remove_action(name)
 
         def _act(name, cb):
@@ -1312,10 +1335,16 @@ class MainWindow(Adw.ApplicationWindow):
         _act("grp-share",    lambda: self._share_group(group))
         _act("grp-settings", lambda: self._open_group_settings(group))
 
+        gid = str(group["id"])
+        mute_act = Gio.SimpleAction.new("set-mute", GLib.VariantType.new("i"))
+        mute_act.connect("activate",
+            lambda _a, p: self._apply_mute("group", gid, p.get_int32()))
+        win.add_action(mute_act)
+
     def _register_dm_actions(self, other_user: dict, other_user_id: str):
         """Register window actions backing the DM header's view-more menu."""
         win = self
-        for name in ("dm-pinned", "dm-jump-date", "dm-contact"):
+        for name in ("set-mute", "dm-pinned", "dm-jump-date", "dm-contact"):
             try: win.remove_action(name)
             except Exception: pass
 
@@ -1333,6 +1362,12 @@ class MainWindow(Adw.ApplicationWindow):
         _act("dm-contact",   lambda: self.open_contact_detail(
             other_user, str(other_user_id)))
 
+        oid = str(other_user_id)
+        mute_act = Gio.SimpleAction.new("set-mute", GLib.VariantType.new("i"))
+        mute_act.connect("activate",
+            lambda _a, p: self._apply_mute("dm", oid, p.get_int32()))
+        win.add_action(mute_act)
+
     def _share_group(self, group: dict):
         """Show share dialog with copy button, system share, and QR code."""
         share_url = group.get("share_url") or group.get("share_token")
@@ -1341,6 +1376,16 @@ class MainWindow(Adw.ApplicationWindow):
             return
 
         dlg = StandardDialog(title="Share Group", width=360, height=-1)
+
+        def _copy(*_):
+            Gdk.Display.get_default().get_clipboard().set(share_url)
+            self.toast("Link copied!")
+            dlg.close()
+
+        copy_btn = Gtk.Button(label="Copy")
+        copy_btn.add_css_class("suggested-action")
+        copy_btn.connect("clicked", _copy)
+        dlg.add_header_widget(copy_btn, end=True)
 
         box = dlg.set_scrolled_body(margin=20, spacing=16)
 
@@ -1354,20 +1399,6 @@ class MainWindow(Adw.ApplicationWindow):
         url_row.set_subtitle(share_url)
         url_row.set_subtitle_selectable(True)
         box.append(url_row)
-
-        # Copy button
-        copy_btn = Gtk.Button(label="Copy Link")
-        copy_btn.add_css_class("suggested-action")
-        copy_btn.add_css_class("pill")
-        copy_btn.set_icon_name("edit-copy-symbolic")
-
-        def _copy(*_):
-            Gdk.Display.get_default().get_clipboard().set(share_url)
-            self.toast("Link copied!")
-            dlg.close()
-
-        copy_btn.connect("clicked", _copy)
-        box.append(copy_btn)
 
         # System share button (via portal)
         share_btn = Gtk.Button(label="Share…")

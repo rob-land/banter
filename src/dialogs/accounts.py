@@ -5,43 +5,49 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import Gtk, Adw, GLib
+from gi.repository import Gtk, Adw
 
 from ..constants import esc
 from ..config import Config
 from ..helpers import set_avatar_from_url
-from ..widgets.base import StandardDialog
 
 
-class AccountsDialog(StandardDialog):
+class AccountsDialog(Adw.PreferencesDialog):
     def __init__(self, config: Config, parent, on_switch):
-        super().__init__(title="Accounts", width=400, height=420)
+        super().__init__()
+        self.set_title("Accounts")
         self._config    = config
         self._parent    = parent
         self._on_switch = on_switch
 
-        body = self.set_scrolled_body(margin=12, spacing=12)
+        page = Adw.PreferencesPage()
+        self.add(page)
 
         self._accs_grp = Adw.PreferencesGroup(title="Signed-in Accounts")
-        body.append(self._accs_grp)
+        page.add(self._accs_grp)
 
-        add_btn = Gtk.Button(label="Add Account")
-        add_btn.add_css_class("suggested-action")
-        add_btn.add_css_class("pill")
-        add_btn.connect("clicked", self._add_account)
-        body.append(add_btn)
+        # Trailing "Add Account" row — the GNOME Settings pattern for
+        # "add to a list" is a row at the end of the same group rather
+        # than a free-floating pill button.
+        self._add_row = Adw.ButtonRow(title="Add Account",
+                                       start_icon_name="list-add-symbolic")
+        self._add_row.add_css_class("suggested-action")
+        self._add_row.connect("activated", self._add_account)
 
+        # Track rows we own so we can clear them on refresh — walking
+        # AdwPreferencesGroup with get_first_child() hits internal
+        # widgets that aren't valid remove() targets.
+        self._account_rows = []
+        self._add_row_attached = False
         self._refresh_list()
 
     def _refresh_list(self):
-        child = self._accs_grp.get_first_child()
-        while child:
-            nxt = child.get_next_sibling()
-            try:
-                self._accs_grp.remove(child)
-            except Exception:
-                pass
-            child = nxt
+        for row in self._account_rows:
+            self._accs_grp.remove(row)
+        self._account_rows = []
+        if self._add_row_attached:
+            self._accs_grp.remove(self._add_row)
+            self._add_row_attached = False
 
         active = self._config.get_active_account()
         active_id = active["user_id"] if active else None
@@ -73,6 +79,11 @@ class AccountsDialog(StandardDialog):
             row.add_suffix(rm_btn)
 
             self._accs_grp.add(row)
+            self._account_rows.append(row)
+
+        # Add Account row always lives at the bottom of the group.
+        self._accs_grp.add(self._add_row)
+        self._add_row_attached = True
 
     def _switch(self, btn, acc):
         self._config.set_active_account(acc["user_id"])
@@ -90,14 +101,11 @@ class AccountsDialog(StandardDialog):
             self._on_switch(remaining[0])
 
     def _add_account(self, *_):
-        dlg = LoginDialog(self._parent,
-                           on_login=self._on_new_account)
+        from .login import LoginDialog
+        dlg = LoginDialog(self._parent, on_login=self._on_new_account)
         dlg.present(self._parent)
 
     def _on_new_account(self, token, user):
         self._config.add_account(token, user)
         self._on_switch(self._config.get_active_account())
         self._refresh_list()
-
-
-# ─────────────────────────── OAuth Callback Server ───────────────

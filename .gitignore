@@ -2,6 +2,7 @@
 _build/
 _flatpak/
 _flatpak-aarch64/
+_pages/
 repo/
 *.flatpak
 

@@ -85,10 +85,19 @@ def _spin_sep(char):
 
 class CreateEventDialog(StandardDialog):
     def __init__(self, api, group, parent):
-        super().__init__(title="Create Event", width=400, height=640)
+        super().__init__(title="Create Event", width=400, height=620)
         self._api    = api
         self._group  = group
         self._parent = parent
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda *_: self.close())
+        self.add_header_widget(cancel_btn, end=False)
+
+        self._btn = Gtk.Button(label="Create")
+        self._btn.add_css_class("suggested-action")
+        self._btn.connect("clicked", self._create)
+        self.add_header_widget(self._btn, end=True)
 
         box = self.set_scrolled_body(margin=16, spacing=16)
 
@@ -158,13 +167,6 @@ class CreateEventDialog(StandardDialog):
 
         box.append(self._time_grp)
 
-        # ── Button ──
-        self._btn = Gtk.Button(label="Create Event")
-        self._btn.add_css_class("suggested-action")
-        self._btn.add_css_class("pill")
-        self._btn.connect("clicked", self._create)
-        box.append(self._btn)
-
     def _on_all_day_toggled(self, row, _param):
         self._time_grp.set_visible(not row.get_active())
 
@@ -226,7 +228,7 @@ class CreateEventDialog(StandardDialog):
 
     def _done(self, r):
         self._btn.set_sensitive(True)
-        self._btn.set_label("Create Event")
+        self._btn.set_label("Create")
         meta = (r or {}).get("meta", {})
         if meta.get("code") in (200, 201):
             self._parent.toast("Event created!")
@@ -463,8 +465,10 @@ class EventDetailDialog(StandardDialog):
 
         self._not_going_btn = Gtk.Button(label="Can't go")
         self._not_going_btn.add_css_class("pill")
+        # Selected state uses suggested-action like Going — destructive
+        # would imply this RSVP is dangerous, which it isn't.
         if my_status == "not_going":
-            self._not_going_btn.add_css_class("destructive-action")
+            self._not_going_btn.add_css_class("suggested-action")
         self._not_going_btn.connect("clicked", self._rsvp, "not_going")
         btn_box.append(self._not_going_btn)
 
@@ -485,13 +489,12 @@ class EventDetailDialog(StandardDialog):
         if ok:
             label = "I'm in" if status == "going" else "Can't go"
             self._parent.toast(f"RSVP: {label}")
-            # Update button styles to reflect new status
             self._going_btn.remove_css_class("suggested-action")
-            self._not_going_btn.remove_css_class("destructive-action")
+            self._not_going_btn.remove_css_class("suggested-action")
             if status == "going":
                 self._going_btn.add_css_class("suggested-action")
             else:
-                self._not_going_btn.add_css_class("destructive-action")
+                self._not_going_btn.add_css_class("suggested-action")
         else:
             self._parent.toast("RSVP failed")
 
@@ -500,11 +503,20 @@ class EventDetailDialog(StandardDialog):
 
 class CreatePollDialog(StandardDialog):
     def __init__(self, api, group, parent):
-        super().__init__(title="Add Poll", width=400, height=560)
+        super().__init__(title="Add Poll", width=400, height=540)
         self._api    = api
         self._group  = group
         self._parent = parent
         self._option_rows = []
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda *_: self.close())
+        self.add_header_widget(cancel_btn, end=False)
+
+        self._btn = Gtk.Button(label="Create")
+        self._btn.add_css_class("suggested-action")
+        self._btn.connect("clicked", self._create)
+        self.add_header_widget(self._btn, end=True)
 
         box = self.set_scrolled_body(margin=16, spacing=16)
 
@@ -532,12 +544,6 @@ class CreatePollDialog(StandardDialog):
         self._expiry.set_value(24)
         settings_grp.add(self._expiry)
         box.append(settings_grp)
-
-        self._btn = Gtk.Button(label="Create Poll")
-        self._btn.add_css_class("suggested-action")
-        self._btn.add_css_class("pill")
-        self._btn.connect("clicked", self._create)
-        box.append(self._btn)
 
     def _add_option(self):
         n   = len(self._option_rows) + 1

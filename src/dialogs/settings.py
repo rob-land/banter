@@ -1,18 +1,18 @@
 """Banter — GroupSettingsDialog."""
 
+import time
+
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import Gtk, Adw, GLib, Gio
+from gi.repository import Gtk, Adw, GLib, Gdk
 
-from ..constants import dbg, esc
-from ..widgets.base import StandardDialog
 from ..async_utils import run_in_background
 
 
-class GroupSettingsDialog(StandardDialog):
+class GroupSettingsDialog(Adw.PreferencesDialog):
     MUTE_OPTIONS = [
         ("1 hour",     3600),
         ("8 hours",    28800),
@@ -23,7 +23,8 @@ class GroupSettingsDialog(StandardDialog):
     ]
 
     def __init__(self, api, group, me_id, config, parent):
-        super().__init__(title="Group Settings", width=420, height=640)
+        super().__init__()
+        self.set_title("Group Settings")
         self._api    = api
         self._group  = group
         self._me     = str(me_id)
@@ -33,7 +34,8 @@ class GroupSettingsDialog(StandardDialog):
         self._is_owner = (creator == self._me)
         gid          = str(group["id"])
 
-        box = self.set_scrolled_body(margin=12, spacing=16)
+        page = Adw.PreferencesPage()
+        self.add(page)
 
         # ── Group info edit (owner only) ──
         if self._is_owner:
@@ -44,12 +46,12 @@ class GroupSettingsDialog(StandardDialog):
             self._desc_row = Adw.EntryRow(title="Description")
             self._desc_row.set_text(group.get("description","") or "")
             info_grp.add(self._desc_row)
-            save_row = Adw.ActionRow(title="Save Changes")
-            save_row.set_activatable(True)
-            save_row.add_suffix(Gtk.Image.new_from_icon_name("document-save-symbolic"))
+            save_row = Adw.ButtonRow(title="Save Changes",
+                                      start_icon_name="document-save-symbolic")
+            save_row.add_css_class("suggested-action")
             save_row.connect("activated", self._save_info)
             info_grp.add(save_row)
-            box.append(info_grp)
+            page.add(info_grp)
 
         # ── Invite link ──
         share_grp = Adw.PreferencesGroup(title="Sharing")
@@ -60,7 +62,7 @@ class GroupSettingsDialog(StandardDialog):
         invite_row.add_suffix(Gtk.Image.new_from_icon_name("edit-copy-symbolic"))
         invite_row.connect("activated", self._copy_invite)
         share_grp.add(invite_row)
-        box.append(share_grp)
+        page.add(share_grp)
 
         # ── Notifications / mute ──
         notif_grp = Adw.PreferencesGroup(title="Notifications")
@@ -77,31 +79,27 @@ class GroupSettingsDialog(StandardDialog):
         for label, secs in self.MUTE_OPTIONS:
             row = Adw.ActionRow(title=label)
             row.set_activatable(True)
-            if secs == 0:
-                row.add_css_class("success" if currently_muted else "")
+            if secs == 0 and currently_muted:
+                row.add_css_class("success")
             row.connect("activated", self._set_mute, gid, secs)
             notif_grp.add(row)
-        box.append(notif_grp)
+        page.add(notif_grp)
 
         # ── Admin actions ──
         admin_grp = Adw.PreferencesGroup(title="Administration")
         if self._is_owner:
-            del_row = Adw.ActionRow(title="Delete Group",
-                                     subtitle="Permanently remove this group")
-            del_row.set_activatable(True)
-            del_row.add_css_class("error")
-            del_row.add_suffix(Gtk.Image.new_from_icon_name("user-trash-symbolic"))
+            del_row = Adw.ButtonRow(title="Delete Group",
+                                     start_icon_name="user-trash-symbolic")
+            del_row.add_css_class("destructive-action")
             del_row.connect("activated", self._delete_group)
             admin_grp.add(del_row)
         else:
-            leave_row = Adw.ActionRow(title="Leave Group",
-                                       subtitle="Remove yourself from this group")
-            leave_row.set_activatable(True)
-            leave_row.add_css_class("error")
-            leave_row.add_suffix(Gtk.Image.new_from_icon_name("system-log-out-symbolic"))
+            leave_row = Adw.ButtonRow(title="Leave Group",
+                                       start_icon_name="system-log-out-symbolic")
+            leave_row.add_css_class("destructive-action")
             leave_row.connect("activated", self._leave_group)
             admin_grp.add(leave_row)
-        box.append(admin_grp)
+        page.add(admin_grp)
 
     def _save_info(self, *_):
         name = self._name_row.get_text().strip()

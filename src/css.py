@@ -18,10 +18,10 @@ APP_CSS = """
     border-bottom-left-radius: 4px;
 }
 /* In-conversation search: bubbles whose text contains the active query
- * are wrapped in a subtle yellow tint so the matched messages stand
+ * are wrapped in a subtle warning tint so the matched messages stand
  * out at a glance while scrolling through results. */
 .search-match .msg-bubble {
-    box-shadow: inset 0 0 0 2px alpha(#f5c211, 0.85);
+    box-shadow: inset 0 0 0 2px alpha(@warning_color, 0.85);
 }
 /* Optimistic UI for unsent / failed messages. .pending fades the
  * bubble while the API call is in flight. .failed marks the bubble
@@ -54,10 +54,7 @@ APP_CSS = """
     border-radius: 999px;
 }
 .reaction-add-plus {
-    /* Fixed color rather than @accent_bg_color so the + looks the same
-       on every device — the user's theme accent varies wildly
-       (blue on GNOME, orange on FuriOS, green on OnePlus Droidian). */
-    color: #3584e4;
+    color: @accent_color;
     font-weight: bold;
     font-size: 0.85em;
     margin-left: 1px;
@@ -136,17 +133,17 @@ APP_CSS = """
     font-weight: bold;
 }
 
-/* ── Unread indicator — blue dot or count pill ── */
+/* ── Unread indicator — accent dot or count pill ── */
 .unread-dot {
-    background-color: #3584e4;
+    background-color: @accent_bg_color;
     border-radius: 999px;
     min-width: 8px;
     min-height: 8px;
     padding: 0;
 }
 .unread-count {
-    background-color: #3584e4;
-    color: white;
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
     border-radius: 999px;
     padding: 1px 6px;
     font-size: 0.72em;
@@ -182,7 +179,7 @@ APP_CSS = """
     color: alpha(@window_fg_color, 0.5);
 }
 .online-dot {
-    background-color: #3db93d;
+    background-color: @success_color;
     border-radius: 50%;
     min-width: 10px;
     min-height: 10px;
@@ -203,7 +200,7 @@ APP_CSS = """
     background-color: @card_bg_color;
     border-radius: 16px;
     padding: 24px;
-    box-shadow: 0 2px 12px alpha(black, 0.15);
+    box-shadow: 0 2px 12px @shade_color;
 }
 
 /* ── Event card (inline in message bubble) ── */

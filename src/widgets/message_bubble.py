@@ -75,6 +75,22 @@ def _mention_ranges(mentions_att, text_len):
     return merged
 
 
+def _accent_hex() -> str:
+    """Current libadwaita accent color as #RRGGBB. Pango markup can't
+    reference @accent_color directly, so we resolve it at render time
+    and inject the literal hex — keeps mentions in sync with the user's
+    theme accent across light/dark and accent changes."""
+    try:
+        rgba = Adw.StyleManager.get_default().get_accent_color_rgba()
+        r = int(rgba.red   * 255)
+        g = int(rgba.green * 255)
+        b = int(rgba.blue  * 255)
+        return f"#{r:02x}{g:02x}{b:02x}"
+    except Exception:
+        # libadwaita < 1.6: fall back to the GNOME default blue
+        return "#3584e4"
+
+
 def _build_text_markup(text: str, mentions_att, is_mine: bool = False) -> tuple:
     """Return (pango_markup, use_markup) for `text`, applying both URL
     linkification and mention highlighting. Mention spans are rendered
@@ -92,7 +108,7 @@ def _build_text_markup(text: str, mentions_att, is_mine: bool = False) -> tuple:
     if is_mine:
         open_tag = '<span weight="bold" underline="single">'
     else:
-        open_tag = '<span weight="bold" foreground="#3584e4">'
+        open_tag = f'<span weight="bold" foreground="{_accent_hex()}">'
 
     parts  = []
     cursor = 0
