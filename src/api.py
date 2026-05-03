@@ -540,16 +540,43 @@ class GroupMeAPI:
             return resp
         return []
 
-    def create_album(self, gid, name: str):
-        """Albums are not supported by the public API — stub retained for
-        compatibility but has no server effect."""
-        return None
+    # ── Albums (undocumented v3) ──
+    # Captured from web.groupme.com on 2026-05-03. Albums live under
+    # /v3/conversations/{cid}/albums/... and accept group ids for cid.
 
-    def get_album_photos(self, gid, album_id):
-        return []
+    def create_album(self, gid, title: str, cover_url: str = ""):
+        """Create a new album. Returns the album dict on success.
 
-    def add_photo_to_album(self, gid, album_id, image_url: str):
-        return None
+        The web client sends `cover_attachment_id` carrying a media
+        URL (despite the field name). Empty string means no cover —
+        the server then auto-fills cover_image_url from the first
+        media item added to the album."""
+        body = {"title": title, "cover_attachment_id": cover_url}
+        r = self._req("POST",
+                       f"/conversations/{gid}/albums/create",
+                       data=body)
+        return r.get("response") if self._ok(r) else None
+
+    def add_to_album(self, gid, album_id: str, media: list):
+        """Add media items to an album. `media` is a list of
+        ``{"media_url": str, "media_type": "image" | "video",
+            "media_source": "album"}`` dicts."""
+        r = self._req("POST",
+                       f"/conversations/{gid}/albums/media",
+                       data=media,
+                       params={"album_id": album_id})
+        return r.get("response") if self._ok(r) else None
+
+    def get_album(self, gid, album_id: str, per_page: int = 100):
+        """Fetch an album's metadata and its media. Returns the
+        ``response.album`` dict (with `attachments` list nested
+        inside) or None on failure."""
+        r = self._req("GET",
+                       f"/conversations/{gid}/albums/{album_id}/media",
+                       params={"per_page": per_page})
+        if not self._ok(r):
+            return None
+        return (r.get("response") or {}).get("album")
 
     # ── calendar events ──
     def get_events(self, gid):

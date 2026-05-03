@@ -39,12 +39,19 @@ class GalleryDialog(StandardDialog):
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
-        # Upload button in header
+        # Upload button in header (rightmost)
         up_btn = Gtk.Button(icon_name="document-send-symbolic")
         up_btn.add_css_class("flat")
         up_btn.set_tooltip_text("Upload photo to group")
         up_btn.connect("clicked", self._pick_photo)
         self.add_header_widget(up_btn, end=True)
+
+        # New album button (left of upload)
+        new_album_btn = Gtk.Button(icon_name="folder-new-symbolic")
+        new_album_btn.add_css_class("flat")
+        new_album_btn.set_tooltip_text("Create new album")
+        new_album_btn.connect("clicked", self._on_new_album)
+        self.add_header_widget(new_album_btn, end=True)
 
         # Spinner bar
         self._spinner = Gtk.Spinner(spinning=True, margin_top=40,
@@ -299,6 +306,68 @@ class GalleryDialog(StandardDialog):
         else:
             self._parent.toast("Failed to upload photo")
 
+    def _on_new_album(self, *_):
+        AlbumCreatorDialog(
+            self._api, self._group, self._parent).present(self._parent)
 
-# ─────────────────────────── Create Event Dialog ─────────────────
+
+# ─────────────────────────── Album Creator ───────────────────────
+
+class AlbumCreatorDialog(StandardDialog):
+    """Create a new album in a group's gallery.
+
+    Backed by POST /v3/conversations/{gid}/albums/create. The album
+    starts empty; the server auto-fills `cover_image_url` from the
+    first media item added afterwards. Adding media is its own flow
+    (see api.add_to_album); this dialog only handles creation."""
+
+    def __init__(self, api, group, parent):
+        super().__init__(title="New Album", width=380, height=-1)
+        self._api    = api
+        self._group  = group
+        self._parent = parent
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda *_: self.close())
+        self.add_header_widget(cancel_btn, end=False)
+
+        self._create_btn = Gtk.Button(label="Create")
+        self._create_btn.add_css_class("suggested-action")
+        self._create_btn.connect("clicked", self._create)
+        self.add_header_widget(self._create_btn, end=True)
+
+        box = self.set_scrolled_body(margin=16, spacing=16)
+
+        grp = Adw.PreferencesGroup()
+        grp.set_description(
+            "Albums collect images and videos from this group's "
+            "gallery into a named set.")
+        self._name_row = Adw.EntryRow(title="Album name")
+        grp.add(self._name_row)
+        box.append(grp)
+
+    def _create(self, *_):
+        title = self._name_row.get_text().strip()
+        if not title:
+            self._parent.toast("Album name is required")
+            return
+
+        self._create_btn.set_sensitive(False)
+        self._create_btn.set_label("Creating…")
+        gid = self._group["id"]
+        api = self._api
+
+        def worker():
+            r = api.create_album(gid, title)
+            GLib.idle_add(self._on_done, r, title)
+        run_in_background(worker)
+
+    def _on_done(self, album, title):
+        self._create_btn.set_sensitive(True)
+        self._create_btn.set_label("Create")
+        if album:
+            self._parent.toast(f"Album '{title}' created")
+            self.close()
+        else:
+            self._parent.toast("Couldn't create album")
 
