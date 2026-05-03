@@ -21,7 +21,7 @@ from .widgets.conversation_row import ConversationRow, ContactRow
 from .widgets.chat_view import ChatView
 from .oauth import LoginDialog
 from .dialogs.accounts import AccountsDialog
-from .dialogs.group import GroupDetailDialog, NewGroupDialog, ContactDetailDialog
+from .dialogs.group import NewGroupDialog, ContactDetailDialog
 from .dialogs.members import MembersDialog
 from .dialogs.settings import GroupSettingsDialog
 from .dialogs.gallery import GalleryDialog
@@ -971,25 +971,6 @@ class MainWindow(Adw.ApplicationWindow):
         self._content_wrap.append(cv)
         self._clear_poll_cards()
         self._chat_view = cv
-
-    # ── Group detail ──
-    def _show_group_detail(self, *_):
-        if not self._current_group:
-            return
-
-        def worker():
-            g = self._api.get_group(self._current_group["id"])
-            if g:
-                GLib.idle_add(self._open_group_detail, g)
-
-        run_in_background(worker)
-
-    def _open_group_detail(self, group):
-        GroupDetailDialog(
-            self._api, group,
-            self._current_user.get("id"),
-            self
-        ).present(self)
 
     def _new_group(self):
         NewGroupDialog(self._api, self).present(self)
