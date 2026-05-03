@@ -54,6 +54,29 @@ class GalleryDialog(StandardDialog):
         new_album_btn.connect("clicked", self._on_new_album)
         self.add_header_widget(new_album_btn, end=True)
 
+        # Multi-select toggle. Drives _make_thumb's click branching
+        # and toggles FlowBox selection mode for visual feedback.
+        self._select_mode = False
+        self._select_btn = Gtk.ToggleButton()
+        self._select_btn.set_icon_name("object-select-symbolic")
+        self._select_btn.add_css_class("flat")
+        self._select_btn.set_tooltip_text("Select photos to add to an album")
+        self._select_btn.connect("toggled", self._on_select_toggle)
+        self.add_header_widget(self._select_btn, end=True)
+
+        # Bottom action bar — only revealed when at least one
+        # thumbnail is selected.
+        self._select_count_lbl = Gtk.Label()
+        self._select_count_lbl.add_css_class("dim-label")
+        self._add_to_album_btn = Gtk.Button(label="Add to Album…")
+        self._add_to_album_btn.add_css_class("suggested-action")
+        self._add_to_album_btn.connect("clicked", self._on_add_to_album)
+        self._action_bar = Gtk.ActionBar()
+        self._action_bar.pack_start(self._select_count_lbl)
+        self._action_bar.pack_end(self._add_to_album_btn)
+        self._action_bar.set_revealed(False)
+        self.add_bottom_bar(self._action_bar)
+
         # Spinner bar
         self._spinner = Gtk.Spinner(spinning=True, margin_top=40,
                                      halign=Gtk.Align.CENTER)
@@ -290,8 +313,23 @@ class GalleryDialog(StandardDialog):
 
         load_image_async(url, on_loaded)
 
+        # Stash url so the picker can extract media URLs from selected
+        # FlowBoxChildren without re-walking the message list.
+        container._gallery_url = url
+
+        def on_click(*_):
+            if self._select_mode:
+                child = container.get_parent()  # FlowBoxChild
+                if child.is_selected():
+                    self._flow.unselect_child(child)
+                else:
+                    self._flow.select_child(child)
+                self._update_action_bar()
+            else:
+                self._view_photo(url, msg)
+
         gest = Gtk.GestureClick()
-        gest.connect("pressed", lambda *_: self._view_photo(url, msg))
+        gest.connect("pressed", on_click)
         container.add_controller(gest)
         container.set_cursor(Gdk.Cursor.new_from_name("pointer"))
         return container
@@ -409,6 +447,50 @@ class GalleryDialog(StandardDialog):
         AlbumCreatorDialog(
             self._api, self._group, self._parent).present(self._parent)
 
+    # ── Multi-select / "Add to album" ──
+    def _on_select_toggle(self, btn):
+        self._select_mode = btn.get_active()
+        if self._select_mode:
+            self._flow.set_selection_mode(Gtk.SelectionMode.MULTIPLE)
+        else:
+            self._flow.unselect_all()
+            self._flow.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._update_action_bar()
+
+    def _update_action_bar(self):
+        n = len(self._flow.get_selected_children())
+        if self._select_mode and n > 0:
+            self._select_count_lbl.set_text(
+                f"{n} selected" if n != 1 else "1 selected")
+            self._action_bar.set_revealed(True)
+        else:
+            self._action_bar.set_revealed(False)
+
+    def _on_add_to_album(self, *_):
+        media = []
+        for child in self._flow.get_selected_children():
+            container = child.get_child()
+            url = getattr(container, "_gallery_url", "")
+            if url:
+                media.append({
+                    "media_url":    url,
+                    "media_type":   "image",
+                    "media_source": "album",
+                })
+        if not media:
+            return
+        AlbumPickerDialog(
+            self._api, self._group, media, self._parent,
+            on_done=self._on_picker_done,
+        ).present(self._parent)
+
+    def _on_picker_done(self, ok: bool):
+        if not ok:
+            return
+        # Exit select mode and clear the action bar; the user will
+        # likely want to keep browsing.
+        self._select_btn.set_active(False)
+
 
 # ─────────────────────────── Album Creator ───────────────────────
 
@@ -418,13 +500,17 @@ class AlbumCreatorDialog(StandardDialog):
     Backed by POST /v3/conversations/{gid}/albums/create. The album
     starts empty; the server auto-fills `cover_image_url` from the
     first media item added afterwards. Adding media is its own flow
-    (see api.add_to_album); this dialog only handles creation."""
+    (see api.add_to_album); this dialog only handles creation.
 
-    def __init__(self, api, group, parent):
+    Pass `on_created` to chain a follow-up: the callback receives the
+    new album dict on success and runs after the dialog closes."""
+
+    def __init__(self, api, group, parent, on_created=None):
         super().__init__(title="New Album", width=380, height=-1)
-        self._api    = api
-        self._group  = group
-        self._parent = parent
+        self._api        = api
+        self._group      = group
+        self._parent     = parent
+        self._on_created = on_created
 
         cancel_btn = Gtk.Button(label="Cancel")
         cancel_btn.connect("clicked", lambda *_: self.close())
@@ -467,6 +553,8 @@ class AlbumCreatorDialog(StandardDialog):
         if album:
             self._parent.toast(f"Album '{title}' created")
             self.close()
+            if callable(self._on_created):
+                self._on_created(album)
         else:
             self._parent.toast("Couldn't create album")
 
@@ -649,4 +737,139 @@ class AlbumViewDialog(StandardDialog):
         scroll.set_child(picture)
         viewer.set_body(scroll)
         viewer.present(self._parent)
+
+
+# ─────────────────────────── Album Picker ────────────────────────
+
+class AlbumPickerDialog(StandardDialog):
+    """Pick a destination album for a set of media items, or create a
+    new one. The flow:
+
+      1. Lists existing albums via api.get_albums.
+      2. Tap an album → POST those items via api.add_to_album.
+      3. Tap "New album…" → opens AlbumCreatorDialog; when that
+         dialog reports a successfully-created album, the picker's
+         add_to_album follow-up runs automatically.
+
+    `on_done(ok: bool)` fires once after a successful add so the
+    caller can clear selection state."""
+
+    def __init__(self, api, group, media: list, parent, on_done=None):
+        super().__init__(title="Add to Album", width=420, height=520)
+        self._api     = api
+        self._group   = group
+        self._media   = media
+        self._parent  = parent
+        self._on_done = on_done
+
+        body = self.set_scrolled_body(margin=12, spacing=12)
+
+        n = len(media)
+        hint = Gtk.Label(
+            label=f"Adding {n} item{'s' if n != 1 else ''} to:",
+            xalign=0)
+        hint.add_css_class("dim-label")
+        body.append(hint)
+
+        self._spinner = Gtk.Spinner(spinning=True, halign=Gtk.Align.CENTER)
+        self._spinner.set_margin_top(20)
+        body.append(self._spinner)
+
+        self._list_grp = Adw.PreferencesGroup()
+        self._list_grp.set_visible(False)
+        body.append(self._list_grp)
+
+        new_grp = Adw.PreferencesGroup()
+        new_row = Adw.ButtonRow(title="New album…",
+                                 start_icon_name="folder-new-symbolic")
+        new_row.connect("activated", self._on_new_album)
+        new_grp.add(new_row)
+        body.append(new_grp)
+
+        self._load_albums()
+
+    def _load_albums(self):
+        gid = self._group["id"]
+        api = self._api
+        def worker():
+            albums = api.get_albums(gid)
+            GLib.idle_add(self._populate, albums or [])
+        run_in_background(worker)
+
+    def _populate(self, albums: list):
+        self._spinner.set_spinning(False)
+        self._spinner.set_visible(False)
+        self._list_grp.set_visible(True)
+
+        if not albums:
+            empty = Adw.ActionRow(title="No albums yet",
+                                   subtitle="Use \"New album…\" below to create one.")
+            empty.set_activatable(False)
+            self._list_grp.add(empty)
+            return
+
+        for a in albums:
+            row = Adw.ActionRow(title=esc(a.get("title", "Album")))
+            imgs   = int(a.get("total_images") or 0)
+            videos = int(a.get("total_videos") or 0)
+            counts = []
+            if imgs:   counts.append(f"{imgs} image" + ("s" if imgs != 1 else ""))
+            if videos: counts.append(f"{videos} video" + ("s" if videos != 1 else ""))
+            row.set_subtitle(" · ".join(counts) if counts else "Empty")
+            row.set_activatable(True)
+            row.connect("activated", self._add_to_existing, a)
+            self._list_grp.add(row)
+
+    def _add_to_existing(self, _row, album: dict):
+        self._do_add(album)
+
+    def _on_new_album(self, _row):
+        # Hand off to the creator dialog with a follow-up that reuses
+        # _do_add against the freshly-created album. Closing the
+        # picker first avoids stacking three dialogs.
+        media   = self._media
+        on_done = self._on_done
+        api     = self._api
+        group   = self._group
+        parent  = self._parent
+
+        def after_create(album):
+            _add_media(api, group, album, media, parent, on_done)
+
+        self.close()
+        AlbumCreatorDialog(
+            api, group, parent, on_created=after_create
+        ).present(parent)
+
+    def _do_add(self, album: dict):
+        _add_media(self._api, self._group, album, self._media,
+                   self._parent, self._on_done)
+        self.close()
+
+
+def _add_media(api, group, album, media, parent, on_done):
+    """Shared "POST media to this album" worker used by both the
+    existing-album and new-album flows."""
+    gid   = group["id"]
+    aid   = album["album_id"]
+    title = album.get("title", "album")
+    n     = len(media)
+
+    def worker():
+        r = api.add_to_album(gid, aid, media)
+        ok = r is not None
+        def report():
+            try:
+                if ok:
+                    parent.toast(
+                        f"Added {n} item{'s' if n != 1 else ''} to '{title}'")
+                else:
+                    parent.toast("Failed to add to album")
+            except Exception:
+                pass
+            if callable(on_done):
+                on_done(ok)
+        GLib.idle_add(report)
+
+    run_in_background(worker)
 
