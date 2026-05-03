@@ -19,7 +19,7 @@ gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import GLib
 
-from .constants import GROUPME_PUSH, APP_VERSION, dbg
+from .constants import APP_VERSION, dbg
 
 
 class GroupMePush:

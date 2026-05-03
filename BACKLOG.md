@@ -10,20 +10,26 @@ and haven't been touched yet. Loose priority order, top = most useful.
 - **GIF picker** in the compose bar (Tenor or Giphy). GroupMe accepts
   image attachments by URL, so any web GIF works once we have a
   picker UI. Tenor has a free tier with a Google Cloud key.
-- **Pin / unpin messages.** GroupMe data already exposes `pinned_at`
-  and `pinned_by`; the official client has the action. Likely an
-  undocumented v3 endpoint along the lines of `POST /messages/{cid}/{mid}/pin`
-  — capture from web client when ready (same playbook as edit).
-- **File (non-image) attachments** — GroupMe supports a `file`
-  attachment type but it's gated behind a separate upload flow that's
-  not in the public docs. Lower priority — most users send images.
-- **"Jump to date" navigator** for long histories. Calendar picker in
-  the search bar, fetch by `before_id` until we cross the target
-  timestamp, scroll there.
-- **Per-conversation mute** with timed options ("1 hour", "8 hours")
-  instead of just permanent toggle. The config layer (`set_mute(key, until_epoch)`)
-  already supports it; only the UI is missing.
-- **Quote-reply tweaks** — currently the reply preview shows
+- **Voice messages** — record/send short audio clips. Official
+  GroupMe (mobile) has this; no specific API endpoints captured yet.
+- **Inline video playback** — Banter currently treats `.mp4` as a
+  generic file attachment (downloadable). Official client plays it
+  inline. Would need `Gtk.MediaFile` + `Gtk.Video`.
+- **Read receipts** — GroupMe shows reader avatars at the bottom of
+  recent messages. No `mark_read` / `read_at` plumbing in api.py;
+  capture from official client first.
+- **Forward message** — pick a destination conversation for an
+  existing message bubble. Common GroupMe action.
+- **Edit My Profile** UI — `api.update_me` exists; no entry point
+  exposes it.
+- **Mark all read** / per-conversation mark-read.
+- **Album creation** — `api.create_album`, `add_photo_to_album`, and
+  `get_album_photos` are already implemented; no UI calls them. Either
+  build the UI or delete the unused API methods.
+- **System calendar export** for events (.ics download).
+- **Bookmarks / starred messages.**
+- **Online / last-seen presence** indicators.
+- **Quote-reply tweaks** — the reply preview shows
   `"Replying to <name>: <text>"` as plain text; could borrow the
   styled left-bar treatment that incoming reply quotes use.
 - **Audio / video calls.** GroupMe groups support multi-party
@@ -35,6 +41,15 @@ and haven't been touched yet. Loose priority order, top = most useful.
   progress — open in web/mobile to join." Capture a HAR while
   initiating a call from web.groupme.com to find the signaling
   endpoint.
+
+## Recently shipped (drop from this list when noticed)
+
+- ~~Pin / unpin messages~~ — `PinnedDialog`, `pin_message`, `unpin_message`
+- ~~File (non-image) attachments~~ — `chat_view._pick_attachment`
+  routes non-images via `upload_file`
+- ~~"Jump to date" navigator~~ — `JumpToDateDialog`
+- ~~Per-conversation timed mute~~ — bell-button menu with
+  `win.set-mute(int32)` action
 
 ## Edit-message UX polish
 

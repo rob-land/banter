@@ -6,7 +6,7 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib
 
-from ..constants import dbg, esc
+from ..constants import esc
 from ..async_utils import run_in_background
 from ..widgets.base import StandardDialog
 

@@ -8,7 +8,7 @@ gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio, Gdk, Pango
 
-from .constants import APP_NAME, APP_VERSION, DEBUG, DEMO, dbg, esc
+from .constants import APP_ID, APP_NAME, DEMO, dbg, esc
 from .async_utils import run_in_background
 from .config import Config
 from .api import GroupMeAPI
@@ -192,19 +192,6 @@ class MainWindow(Adw.ApplicationWindow):
             self.toast(msg)
         except Exception:
             pass
-
-    def toggle_conv_mute(self, conv_type: str, conv_id):
-        """Flip the mute state for the conversation between off and
-        permanent. Retained for any external callers; the bell button
-        no longer uses it (see _on_mute_clicked for the timed UX)."""
-        key = self._mute_key(conv_type, conv_id)
-        if self._config.is_muted(key):
-            self._config.clear_mute(key)
-        else:
-            self._config.set_mute(key, -1)
-        row = self._rows.get(self._conv_key(conv_type, conv_id))
-        if row is not None and hasattr(row, "set_muted"):
-            row.set_muted(self._config.is_muted(key))
 
     # ── Conversation key helper ──
     @staticmethod
@@ -694,7 +681,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._content_header = hdr
 
         page = Adw.StatusPage(
-            icon_name="chat-message-new-symbolic",
+            icon_name=APP_ID,
             title="Welcome to Banter",
             description="Select a group from the sidebar to start chatting."
         )
@@ -1393,9 +1380,12 @@ class MainWindow(Adw.ApplicationWindow):
             try:
                 # Use Gio to trigger the system share sheet
                 Gio.AppInfo.launch_default_for_uri(share_url, None)
-            except Exception:
-                # Fallback: just copy
-                _copy()
+            except Exception as e:
+                # Don't silently fall back to copy — the user clicked
+                # Share, not Copy. Surface the failure and let them
+                # retry or use the explicit Copy button.
+                dbg("system share failed: %s", e)
+                self.toast("Couldn't open share sheet — try Copy instead")
 
         share_btn.connect("clicked", _system_share)
         box.append(share_btn)

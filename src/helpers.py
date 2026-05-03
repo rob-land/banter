@@ -14,8 +14,6 @@ from gi.repository import Gtk, Adw, GLib, GdkPixbuf
 from .constants import CACHE_DIR, APP_VERSION, dbg
 from .async_utils import run_in_background
 
-from pathlib import Path
-
 
 # ─────────────────────────── Message helpers ─────────────────────
 
