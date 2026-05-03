@@ -101,8 +101,10 @@ class AccountsDialog(Adw.PreferencesDialog):
             self._on_switch(remaining[0])
 
     def _add_account(self, *_):
-        from .login import LoginDialog
-        dlg = LoginDialog(self._parent, on_login=self._on_new_account)
+        from ..oauth import LoginDialog
+        dlg = LoginDialog(self._parent,
+                          on_login=self._on_new_account,
+                          quit_on_cancel=False)
         dlg.present(self._parent)
 
     def _on_new_account(self, token, user):

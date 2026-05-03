@@ -113,12 +113,13 @@ class LoginDialog(Adw.Dialog):
     --share=network) or via the banter:// URI scheme (mobile fallback).
     """
 
-    def __init__(self, parent, on_login):
+    def __init__(self, parent, on_login, *, quit_on_cancel: bool = True):
         super().__init__()
-        self._parent   = parent
-        self._on_login = on_login
-        self._api      = GroupMeAPI()
-        self._server   = None
+        self._parent          = parent
+        self._on_login        = on_login
+        self._quit_on_cancel  = quit_on_cancel
+        self._api             = GroupMeAPI()
+        self._server          = None
 
         self.set_title(f"Sign in to {APP_NAME}")
         self.set_content_width(400)
@@ -255,9 +256,15 @@ class LoginDialog(Adw.Dialog):
             self._server = None
 
     def _on_dialog_closed(self, *_):
-        dbg("LoginDialog: closed without login — quitting")
+        # Only quit on cancel for the initial sign-in path. When invoked
+        # from AccountsDialog the user is adding a secondary account and
+        # cancelling should leave the app running.
         if self._server:
             self._server.stop()
+        if not self._quit_on_cancel:
+            dbg("LoginDialog: closed without login (cancel)")
+            return
+        dbg("LoginDialog: closed without login — quitting")
         app = self._parent.get_application() if self._parent else None
         if app:
             app.quit()
