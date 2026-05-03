@@ -143,7 +143,7 @@ class PinnedDialog(StandardDialog):
         jump_btn.connect("clicked", self._on_jump, mid)
         row.add_suffix(jump_btn)
 
-        unpin_btn = Gtk.Button(icon_name="user-trash-symbolic")
+        unpin_btn = Gtk.Button(icon_name="list-remove-symbolic")
         unpin_btn.add_css_class("flat")
         unpin_btn.set_valign(Gtk.Align.CENTER)
         unpin_btn.set_tooltip_text("Unpin")
