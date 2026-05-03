@@ -241,8 +241,8 @@ class GalleryDialog(StandardDialog):
             if not self._messages:
                 empty = Adw.StatusPage(
                     icon_name="image-x-generic-symbolic",
-                    title="No Images Yet",
-                    description="Images shared in this group will appear here")
+                    title="Nothing here yet",
+                    description="Images and videos shared in this group will appear here")
                 empty.set_vexpand(True)
                 # Replace spinner with empty state
                 parent_box = self._spinner.get_parent()
@@ -254,11 +254,8 @@ class GalleryDialog(StandardDialog):
 
         for msg in msgs:
             for att in msg.get("attachments", []):
-                if att.get("type") == "image":
-                    url = att.get("url", "")
-                    if url:
-                        thumb = self._make_thumb(url, msg)
-                        self._flow.append(thumb)
+                if att.get("type") in ("image", "video") and att.get("url"):
+                    self._flow.append(self._make_thumb(att, msg))
 
         self._messages.extend(msgs)
 
@@ -273,8 +270,12 @@ class GalleryDialog(StandardDialog):
             self._exhausted = True
 
     # ── Thumbnail ──
-    def _make_thumb(self, url: str, msg: dict) -> Gtk.Box:
-        container = Gtk.Box()
+    def _make_thumb(self, att: dict, msg: dict) -> Gtk.Widget:
+        kind        = att.get("type", "image")
+        url         = att.get("url", "")
+        preview_url = att.get("preview_url", "")
+
+        container = Gtk.Overlay()
         container.add_css_class("album-thumb")
         container.set_size_request(self.THUMB_SIZE, self.THUMB_SIZE)
 
@@ -290,10 +291,26 @@ class GalleryDialog(StandardDialog):
         picture.set_size_request(self.THUMB_SIZE, self.THUMB_SIZE)
         stack.add_named(picture, "image")
 
-        err = Gtk.Image.new_from_icon_name("image-missing-symbolic")
+        # For videos without a preview URL (common in /gallery responses)
+        # we'd otherwise show "image missing" — but the play overlay
+        # makes it clear it's still playable, so use a video glyph
+        # instead of the error icon as the placeholder.
+        ph_icon = "video-x-generic-symbolic" if kind == "video" \
+                  else "image-missing-symbolic"
+        err = Gtk.Image.new_from_icon_name(ph_icon)
+        err.set_pixel_size(48)
         stack.add_named(err, "error")
         stack.set_visible_child_name("loading")
-        container.append(stack)
+        container.set_child(stack)
+
+        if kind == "video":
+            play = Gtk.Image.new_from_icon_name(
+                "media-playback-start-symbolic")
+            play.set_pixel_size(40)
+            play.set_halign(Gtk.Align.CENTER)
+            play.set_valign(Gtk.Align.CENTER)
+            play.add_css_class("video-play-overlay")
+            container.add_overlay(play)
 
         def on_loaded(path):
             if path:
@@ -311,11 +328,20 @@ class GalleryDialog(StandardDialog):
                     pass
             stack.set_visible_child_name("error")
 
-        load_image_async(url, on_loaded)
+        # Images use the URL directly; videos use the preview_url when
+        # the server provides one. Without a preview_url, jump straight
+        # to the placeholder — we can't decode a frame from the video
+        # URL without playback.
+        thumb_src = url if kind == "image" else preview_url
+        if thumb_src:
+            load_image_async(thumb_src, on_loaded)
+        else:
+            stack.set_visible_child_name("error")
 
-        # Stash url so the picker can extract media URLs from selected
-        # FlowBoxChildren without re-walking the message list.
-        container._gallery_url = url
+        # Stash url + kind so the picker can build the add_to_album
+        # payload without re-walking the message list.
+        container._gallery_url  = url
+        container._gallery_kind = kind
 
         def on_click(*_):
             if self._select_mode:
@@ -325,6 +351,8 @@ class GalleryDialog(StandardDialog):
                 else:
                     self._flow.select_child(child)
                 self._update_action_bar()
+            elif kind == "video":
+                self._view_video(url, preview_url, msg)
             else:
                 self._view_photo(url, msg)
 
@@ -335,6 +363,16 @@ class GalleryDialog(StandardDialog):
         return container
 
     # ── Full-size viewer ──
+    def _view_video(self, url: str, preview_url: str, msg: dict):
+        sender = msg.get("name", "")
+        ts     = msg.get("created_at", 0)
+        dt     = datetime.fromtimestamp(ts).strftime("%-d %b %Y, %-I:%M %p") if ts else ""
+        viewer = StandardDialog(title=f"{sender}  {dt}".strip(),
+                                width=720, height=480)
+        video = VideoAttachment(url, preview_url, self._parent)
+        viewer.set_body(video)
+        viewer.present(self._parent)
+
     def _view_photo(self, url: str, msg: dict):
         sender = msg.get("name", "")
         ts     = msg.get("created_at", 0)
@@ -470,11 +508,12 @@ class GalleryDialog(StandardDialog):
         media = []
         for child in self._flow.get_selected_children():
             container = child.get_child()
-            url = getattr(container, "_gallery_url", "")
+            url  = getattr(container, "_gallery_url", "")
+            kind = getattr(container, "_gallery_kind", "image")
             if url:
                 media.append({
                     "media_url":    url,
-                    "media_type":   "image",
+                    "media_type":   kind,
                     "media_source": "album",
                 })
         if not media:
