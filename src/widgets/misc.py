@@ -1,4 +1,4 @@
-"""Banter — miscellaneous reusable widgets (LoadingRow, ImageAttachment, FileAttachment, DateSeparator)."""
+"""Banter — miscellaneous reusable widgets (LoadingRow, ImageAttachment, VideoAttachment, FileAttachment, DateSeparator)."""
 
 from datetime import datetime
 import gi
@@ -132,6 +132,73 @@ class ImageAttachment(Gtk.Frame):
                 shutil.copy(src, dest)
         except GLib.Error:
             pass
+
+
+class VideoAttachment(Gtk.Overlay):
+    """Inline video player for GroupMe `video` attachments.
+
+    Shows the preview thumbnail with a centered play button. The
+    network is left alone until the user clicks: at that point the
+    thumbnail is swapped for a Gtk.Video that streams from `url`.
+    Keeps the chat scroll cheap when there are many videos in view."""
+
+    MAX_W, MAX_H = 320, 240
+
+    def __init__(self, video_url: str, preview_url: str = ""):
+        super().__init__()
+        self.add_css_class("attachment-frame")
+        self._video_url = video_url
+        self._playing   = False
+
+        self._picture = Gtk.Picture()
+        self._picture.set_can_shrink(True)
+        self._picture.set_content_fit(Gtk.ContentFit.COVER)
+        self._picture.set_size_request(self.MAX_W, self.MAX_H)
+        self.set_child(self._picture)
+
+        self._play_overlay = Gtk.Image.new_from_icon_name(
+            "media-playback-start-symbolic")
+        self._play_overlay.set_pixel_size(56)
+        self._play_overlay.set_halign(Gtk.Align.CENTER)
+        self._play_overlay.set_valign(Gtk.Align.CENTER)
+        self._play_overlay.add_css_class("video-play-overlay")
+        self.add_overlay(self._play_overlay)
+
+        gest = Gtk.GestureClick()
+        gest.connect("pressed", self._on_click)
+        self.add_controller(gest)
+        self.set_cursor(Gdk.Cursor.new_from_name("pointer"))
+
+        if preview_url:
+            load_image_async(preview_url, self._on_preview_loaded)
+
+    def _on_preview_loaded(self, path):
+        if not path or self._playing:
+            return
+        try:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                path, self.MAX_W, self.MAX_H, True)
+            ok, buf = pixbuf.save_to_bufferv("png", [], [])
+            if ok:
+                texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(buf))
+                self._picture.set_paintable(texture)
+        except Exception:
+            pass
+
+    def _on_click(self, *_):
+        if self._playing or not self._video_url:
+            return
+        self._playing = True
+        video = Gtk.Video()
+        video.set_size_request(self.MAX_W, self.MAX_H)
+        video.set_autoplay(True)
+        video.set_file(Gio.File.new_for_uri(self._video_url))
+        self.set_child(video)
+        try:
+            self.remove_overlay(self._play_overlay)
+        except Exception:
+            pass
+        self.set_cursor(None)
 
 
 def _format_size(n: int) -> str:

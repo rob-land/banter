@@ -195,6 +195,14 @@ APP_CSS = """
     border-radius: 12px;
 }
 
+/* ── Video play-button overlay ── */
+.video-play-overlay {
+    color: white;
+    background-color: alpha(black, 0.55);
+    border-radius: 999px;
+    padding: 12px;
+}
+
 /* ── Login page ── */
 .login-card {
     background-color: @card_bg_color;
