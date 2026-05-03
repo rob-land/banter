@@ -578,6 +578,38 @@ class GroupMeAPI:
             return None
         return (r.get("response") or {}).get("album")
 
+    def get_albums(self, gid, per_page: int = 50):
+        """List the albums in a conversation. Each entry is the album
+        metadata dict (no media list — call `get_album` to fetch a
+        single album's contents).
+
+        GET /v3/conversations/{gid}/albums?per_page=N"""
+        r = self._req("GET",
+                       f"/conversations/{gid}/albums",
+                       params={"per_page": per_page})
+        if not self._ok(r):
+            return []
+        return (r.get("response") or {}).get("albums") or []
+
+    # ── Calls (Microsoft Teams meetings under the hood) ──
+    # GroupMe calls aren't a Banter-implementable WebRTC feature —
+    # the server returns a Teams meeting URL and an Azure
+    # Communication Services token, and the official client embeds
+    # the Teams call composite. From a Linux client without that
+    # SDK, the best we can do is open the meeting URL in the user's
+    # browser, which has working camera/mic permissions and the
+    # full Teams UI.
+
+    def get_call(self, gid):
+        """Get (or lazily create) the call session for a conversation.
+        Returns ``{token, expires_on, meeting_type, meeting_id}`` —
+        ``meeting_id`` is a teams.live.com URL the user can join in
+        any browser. Returns None if no call is reachable."""
+        r = self._req("GET", f"/conversations/{gid}/call")
+        if not self._ok(r):
+            return None
+        return r.get("response")
+
     # ── calendar events ──
     def get_events(self, gid):
         r = self._req("GET", f"/conversations/{gid}/events/list")

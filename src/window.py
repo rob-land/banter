@@ -193,6 +193,36 @@ class MainWindow(Adw.ApplicationWindow):
         except Exception:
             pass
 
+    # ── Call (Teams meeting) ───────────────────────────────────────
+    def _on_call_clicked(self, _btn, conv_id):
+        """Fetch the call session for this conversation and open the
+        Teams meeting URL in the system browser. The official client
+        embeds Azure Communication Services' Teams composite; from a
+        Linux app without that SDK, the browser is the right place
+        for the user to grant camera/mic and join the call."""
+        self.toast("Starting call…")
+        api = self._api
+
+        def worker():
+            r = api.get_call(conv_id)
+            GLib.idle_add(self._open_call, r)
+
+        run_in_background(worker)
+
+    def _open_call(self, call: dict):
+        if not call:
+            self.toast("Couldn't start call")
+            return
+        url = call.get("meeting_id", "")
+        if not url:
+            self.toast("Couldn't start call")
+            return
+        try:
+            Gio.AppInfo.launch_default_for_uri(url, None)
+        except Exception as e:
+            dbg("call launch failed: %s", e)
+            self.toast("Couldn't open browser for call")
+
     # ── Conversation key helper ──
     @staticmethod
     def _conv_key(conv_type: str, conv_id) -> tuple:
@@ -944,6 +974,15 @@ class MainWindow(Adw.ApplicationWindow):
         self._mute_btn = mute_btn
         hdr.pack_end(mute_btn)
 
+        # Start / join call. GroupMe calls are Microsoft Teams meetings
+        # under the hood; we just open the meeting URL in the browser
+        # and let Teams handle the media.
+        call_btn = Gtk.Button(icon_name="call-start-symbolic")
+        call_btn.add_css_class("flat")
+        call_btn.set_tooltip_text("Start or join call")
+        call_btn.connect("clicked", self._on_call_clicked, group["id"])
+        hdr.pack_end(call_btn)
+
         self._content_nav.set_title(esc(group.get("name","Group")))
         self._content_tv.add_top_bar(hdr)
         self._content_header = hdr
@@ -1036,6 +1075,13 @@ class MainWindow(Adw.ApplicationWindow):
             self._build_mute_menu("dm", str(other_user_id)))
         self._mute_btn = mute_btn
         hdr.pack_end(mute_btn)
+
+        call_btn = Gtk.Button(icon_name="call-start-symbolic")
+        call_btn.add_css_class("flat")
+        call_btn.set_tooltip_text("Start or join call")
+        call_btn.connect("clicked", self._on_call_clicked,
+                          str(other_user_id))
+        hdr.pack_end(call_btn)
 
         self._content_nav.set_title(esc(name))
         self._content_tv.add_top_bar(hdr)
