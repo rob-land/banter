@@ -668,7 +668,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._top_switcher = Adw.ViewSwitcher()
         self._top_switcher.set_stack(self._stack)
         self._top_switcher.set_policy(Adw.ViewSwitcherPolicy.NARROW)
-        hdr.set_title_widget(self._top_switcher)
+        # Second top bar (below the headerbar) — leaves the header's
+        # title slot free so the NavigationPage title (the app name)
+        # keeps showing.
+        sidebar_tv.add_top_bar(self._top_switcher)
 
         self._bottom_switcher = Adw.ViewSwitcherBar()
         self._bottom_switcher.set_stack(self._stack)

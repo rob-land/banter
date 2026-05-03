@@ -26,7 +26,7 @@ gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio
 
-from .constants import OAUTH_AUTHORIZE_URL, APP_NAME, APP_VERSION, dbg
+from .constants import OAUTH_AUTHORIZE_URL, OAUTH_PORT, APP_NAME, dbg
 from .async_utils import run_in_background
 from .api import GroupMeAPI
 
@@ -34,7 +34,6 @@ from .api import GroupMeAPI
 # Register your app at dev.groupme.com/applications.
 # Set Callback URL to: http://localhost:7654
 BANTER_CLIENT_ID = "5JNvmRNJsERSOyE1ntQyziEJuV9VT9jWlo5OUfh0OB6mwNxw"
-OAUTH_PORT       = 7654
 OAUTH_CALLBACK   = f"http://localhost:{OAUTH_PORT}"
 
 
