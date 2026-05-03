@@ -273,10 +273,24 @@ response (the server keeps both side-by-side). Don't expand
 GET /v3/conversations/{gid}/gallery?limit=N&acceptFiles=1&before=<gallery_ts>&after=<gallery_ts>
 ```
 
-Returns messages that contain images, newest-first, paginated by
-`gallery_ts` (an ISO-8601 timestamp string). Response shape varies —
-sometimes `{messages: [...]}`, sometimes a flat list. Banter handles
-both in `get_gallery`.
+Returns messages that contain images and videos, newest-first,
+paginated by `gallery_ts` (an ISO-8601 timestamp string). Response
+shape varies — sometimes `{messages: [...]}`, sometimes a flat list.
+Banter handles both in `get_gallery`.
+
+### Albums (undocumented, v3)
+
+Recovered 2026-05-03. Albums live under `/v3/conversations/{cid}/albums/`
+and accept group ids for cid. Albums hold both images and videos;
+older stub methods that assumed image-only have been replaced.
+
+| | |
+|---|---|
+| `POST /v3/conversations/{cid}/albums/create` | Body: `{title, cover_attachment_id}`. `cover_attachment_id` is a media URL despite its name; empty string means no cover and the server auto-fills it from the first added media. Response carries `album_id`, `share_url`, `total_images`, `total_videos`. |
+| `GET /v3/conversations/{cid}/albums?per_page=N` | List the conversation's albums. Response: `{albums: [...], next_cursor}`. |
+| `GET /v3/conversations/{cid}/albums/{aid}/media?per_page=N` | Fetch one album. Response: `{album: {..., attachments: [...]}, next_cursor}`. Note the media list is nested inside `album.attachments`, not at top level. |
+| `POST /v3/conversations/{cid}/albums/media?album_id={aid}` | Add media. Body is an **array** of `{media_url, media_type, media_source}`. `media_type` is `"image"` or `"video"`; `media_source` is always `"album"`. |
+| `PUT /v3/conversations/{cid}/albums/update` | Update an album's title / cover. Captured 2026-05-03 but Banter doesn't wire it yet (no edit-album UI). |
 
 ### Calendar events
 
@@ -409,6 +423,25 @@ GET https://file.groupme.com/v1/{cid}/files/{file_id}?access_token=<token>&_dl=<
 * Response carries `Content-Disposition: attachment; filename*=UTF-8''<encoded>`
   with the original filename, so the server-suggested filename will
   match the upload.
+
+### Calls (Microsoft Teams, undocumented)
+
+Recovered 2026-05-03. **GroupMe calls aren't WebRTC.** The server
+returns an Azure Communication Services token plus a
+`teams.live.com/meet/...` URL — the official client embeds Teams'
+call composite to actually join. From a Linux app without that SDK
+the right move is to launch the meeting URL in the user's browser,
+which has working camera/mic prompts and the full Teams UI.
+
+| | |
+|---|---|
+| `GET /v3/conversations/{cid}/call` | Get-or-create the call session. Returns `{token, expires_on, meeting_type: "tfl", meeting_id: "https://teams.live.com/meet/..."}`. The same endpoint lazily creates a session if none exists, so a single GET both starts a call and joins one already in progress. |
+| `PUT /v1/conversations/{cid}/call/heartbeat` | Keepalive sent by the official client during an active call. Banter doesn't send heartbeats — the call lives in the user's browser, not in the app. Note the **v1** path. |
+| `POST /v1/conversations/{cid}/call/disconnect` | Leave-call signal. Same: only relevant if Banter were the call host, which it isn't. |
+
+Banter's `_on_call_clicked` calls `GET /call` and hands `meeting_id`
+to `Gio.AppInfo.launch_default_for_uri`. No in-app participants UI,
+no media plane, no signaling beyond fetching the meeting URL.
 
 ---
 
@@ -551,17 +584,28 @@ Faye channels:
 
 ## What's deliberately not implemented
 
-* **Audio / video calls** — GroupMe's web and mobile clients support
-  multi-party calls inside a group. Banter does not. The protocol
-  hasn't been captured (likely a proprietary signaling layer over
-  push or a dedicated WebSocket plus a media SFU using WebRTC). On
-  Linux a real implementation would mean GStreamer's `webrtcbin`,
-  Pipewire/portal access for camera+mic, and a non-trivial UI for
-  participants/controls. Treat as out-of-scope for now; if a call
-  starts in a group, the user should join from the official
-  app/web. Worth adding a passive "Call started" indicator on the
-  group when we can detect the signaling event.
+* **In-app voice / video calls.** Calls are reachable via the
+  call-start button in chat headers, but the actual media goes
+  through the user's browser via the Teams meeting URL — Banter
+  doesn't embed a call composite. A real in-app implementation
+  would mean Azure Communication Services Web SDK (closed-source)
+  or building a WebRTC pipeline against the same SFU the official
+  client uses. Worth adding a passive "Call in progress" banner
+  driven by the `meeting_id` returned by `GET /call`, but that
+  hasn't shipped yet.
+* **Voice-message attachment shape.** Banter sends recorded audio
+  through `upload_file`, which makes recipients see a generic file
+  download rather than an inline voice clip. The dedicated
+  voice-message upload endpoint isn't captured. Capture a HAR while
+  sending a voice clip from the web client to learn the right
+  endpoint.
+* **Album edit / delete UI.** `PUT /v3/conversations/{cid}/albums/update`
+  is captured (see Albums above) but no Banter UI exposes it. No
+  delete endpoint has been captured.
 * **GIF picker** — would use Tenor/Giphy directly, not GroupMe.
+* **Read receipts.** `POST /v3/conversations/{cid}/{mid}/read_receipt`
+  and `POST /v3/conversations/{cid}/read_receipt` are visible in
+  HARs but Banter doesn't send or display them yet.
 * **Pin events on push** — server doesn't seem to emit them; pin state
   refetched on demand.
 * **`/users/me/powerups` (or whatever the user-scoped catalog is)** —
@@ -571,6 +615,6 @@ Faye channels:
 
 ---
 
-*Last verified against `web.groupme.com` traces on 2026-05-01. If
+*Last verified against `web.groupme.com` traces on 2026-05-03. If
 something here stops working, capture a HAR from the official web
 client first and compare.*

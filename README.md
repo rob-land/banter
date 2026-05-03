@@ -28,7 +28,17 @@ A native GNOME client for GroupMe, built with GTK4 and libadwaita.
   dialog listing all reactions, and a picker for adding your own
 - **Reply threads** — messages that reply to an earlier message show a
   quoted preview of the original
-- **Image attachments** with lazy loading and a full gallery view per group
+- **Image, video, and file attachments** with lazy loading. Videos
+  play inline via GStreamer; right-click to save the original. Files
+  download to a chosen path
+- **Voice messages** — record and send Opus/Ogg audio clips from the
+  compose bar
+- **Group gallery** with albums — browse images and videos, create
+  named albums, and multi-select items to add to an existing album
+  or a brand-new one
+- **Voice / video calls** — Start/Join Call header button opens the
+  GroupMe-provided Teams meeting URL in the system browser; cam/mic
+  permissions and the full call UI live there
 - **Clickable links** — URLs and email addresses in messages are rendered
   as tappable links
 - **Contacts tab** populated automatically from group members, tap any

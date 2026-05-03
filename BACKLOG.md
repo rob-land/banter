@@ -10,37 +10,45 @@ and haven't been touched yet. Loose priority order, top = most useful.
 - **GIF picker** in the compose bar (Tenor or Giphy). GroupMe accepts
   image attachments by URL, so any web GIF works once we have a
   picker UI. Tenor has a free tier with a Google Cloud key.
-- **Voice messages** — record/send short audio clips. Official
-  GroupMe (mobile) has this; no specific API endpoints captured yet.
-- **Inline video playback** — Banter currently treats `.mp4` as a
-  generic file attachment (downloadable). Official client plays it
-  inline. Would need `Gtk.MediaFile` + `Gtk.Video`.
-- **Read receipts** — GroupMe shows reader avatars at the bottom of
-  recent messages. No `mark_read` / `read_at` plumbing in api.py;
-  capture from official client first.
+- **Read receipts.** Endpoints captured 2026-05-03:
+  `POST /v3/conversations/{cid}/{mid}/read_receipt` (per-message) and
+  `POST /v3/conversations/{cid}/read_receipt` (per-conversation). Wire
+  these into ChatView's scroll-to-bottom and bubble-visible events,
+  then surface received-state in message bubbles.
 - **Forward message** — pick a destination conversation for an
   existing message bubble. Common GroupMe action.
 - **Edit My Profile** UI — `api.update_me` exists; no entry point
   exposes it.
-- **Mark all read** / per-conversation mark-read.
-- **Album creation** — `api.create_album`, `add_photo_to_album`, and
-  `get_album_photos` are already implemented; no UI calls them. Either
-  build the UI or delete the unused API methods.
+- **Mark all read** / per-conversation mark-read. Now unblocked since
+  the read-receipt endpoint is known.
+- **Add to album from message bubbles** — Banter's "Add to Album"
+  flow lives in the gallery (multi-select). Right-clicking an image
+  in a regular chat bubble could surface the same picker for a single
+  attachment.
+- **Album edit / delete UI** — `PUT /v3/conversations/{cid}/albums/update`
+  is captured but no UI calls it. No delete endpoint captured yet.
+- **Voice-message attachment shape** — Banter records and uploads as a
+  generic file attachment (OGG). The official client uses a different
+  attachment type that renders as an inline voice clip. Capture a HAR
+  while sending a voice message from the web client to learn the
+  upload endpoint and attachment shape.
+- **Inline call presence** — `GET /v3/conversations/{cid}/call` returns
+  the active meeting URL for a conversation. Polling that (or finding
+  the matching push event) would let Banter show a "Call in progress —
+  join via browser" banner instead of requiring the user to click
+  the call button to discover one.
 - **System calendar export** for events (.ics download).
 - **Bookmarks / starred messages.**
 - **Online / last-seen presence** indicators.
 - **Quote-reply tweaks** — the reply preview shows
   `"Replying to <name>: <text>"` as plain text; could borrow the
   styled left-bar treatment that incoming reply quotes use.
-- **Audio / video calls.** GroupMe groups support multi-party
-  calls in the official clients; Banter is silent on them. Big
-  effort — see GROUPME_API.md "What's deliberately not
-  implemented" for the technical scope. A reasonable interim
-  feature would be passive call detection: when a group call
-  starts, surface a banner / notification that says "Call in
-  progress — open in web/mobile to join." Capture a HAR while
-  initiating a call from web.groupme.com to find the signaling
-  endpoint.
+- **Full in-app calls** — Audio/video calls are launchable today
+  (Start Call → opens Teams in browser) but not embedded. Doing
+  embedded calls would mean the Azure Communication Services Web
+  SDK (closed-source) or a hand-rolled WebRTC pipeline against the
+  same SFU. See GROUPME_API.md "What's deliberately not
+  implemented".
 
 ## Recently shipped (drop from this list when noticed)
 
@@ -50,6 +58,18 @@ and haven't been touched yet. Loose priority order, top = most useful.
 - ~~"Jump to date" navigator~~ — `JumpToDateDialog`
 - ~~Per-conversation timed mute~~ — bell-button menu with
   `win.set-mute(int32)` action
+- ~~Inline video playback~~ — `VideoAttachment` widget; click-to-play
+  with thumbnail preview, right-click to save the original file
+- ~~Voice messages~~ (partial) — compose-bar mic button records via
+  GStreamer (Opus/Ogg) and uploads through `upload_file`; recipients
+  see a generic file rather than an inline voice clip until the
+  proper voice-clip endpoint is captured
+- ~~Album creation, browsing, multi-select add~~ — `AlbumCreatorDialog`,
+  `AlbumViewDialog`, `AlbumPickerDialog`; gallery has a Select
+  toggle for multi-pick across both images and videos
+- ~~Start / Join Call~~ (browser-launch) — call button in chat headers
+  hits `GET /v3/conversations/{cid}/call` and opens the returned
+  Teams meeting URL via the system browser
 
 ## Edit-message UX polish
 
