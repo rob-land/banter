@@ -333,7 +333,7 @@ class MessageBubble(Gtk.Box):
                 url = att.get("url", "")
                 if url:
                     bubble.append(VideoAttachment(
-                        url, att.get("preview_url", "")))
+                        url, att.get("preview_url", ""), window))
             elif kind == "file":
                 fid = att.get("file_id")
                 if fid:

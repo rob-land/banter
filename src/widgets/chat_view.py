@@ -1,6 +1,8 @@
 """Banter — ChatView: message list + compose bar."""
 
 import mimetypes
+import os
+import tempfile
 import time
 import uuid
 from datetime import datetime
@@ -10,7 +12,8 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import Gtk, Adw, GLib, Gdk
+gi.require_version('Gst', '1.0')
+from gi.repository import Gtk, Adw, GLib, Gdk, Gst
 
 from ..constants import dbg
 from ..async_utils import run_in_background
@@ -298,6 +301,16 @@ class ChatView(Gtk.Box):
         attach_btn.set_valign(Gtk.Align.END)
         attach_btn.connect("clicked", self._pick_attachment)
         compose.append(attach_btn)
+
+        self._mic_btn = Gtk.Button(icon_name="audio-input-microphone-symbolic")
+        self._mic_btn.add_css_class("flat")
+        self._mic_btn.add_css_class("compose-btn")
+        self._mic_btn.set_tooltip_text("Record voice message")
+        self._mic_btn.set_valign(Gtk.Align.END)
+        self._mic_btn.connect("clicked", self._toggle_recording)
+        self._recording_pipeline = None
+        self._record_path = None
+        compose.append(self._mic_btn)
 
         self._entry = Gtk.TextView()
         self._entry.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -1711,5 +1724,99 @@ class ChatView(Gtk.Box):
         self._pending_file_id   = None
         self._pending_file_name = None
         self._preview_bar.set_visible(False)
+
+    # ── Voice message recording ────────────────────────────────────
+    # Tap mic to start, tap again to stop. Recorded file is uploaded
+    # via the same file-attachment path images-and-files use, so the
+    # send button picks it up like any other attachment.
+    #
+    # GroupMe's official client treats voice messages as a distinct
+    # attachment type, but that upload endpoint isn't documented or
+    # captured. Using the file-upload flow means recipients see an
+    # OGG download rather than an inline voice clip, which is the
+    # honest fallback until a HAR pins down the real API.
+
+    def _toggle_recording(self, *_):
+        if self._recording_pipeline is None:
+            self._start_recording()
+        else:
+            self._stop_recording()
+
+    def _start_recording(self):
+        Gst.init(None)
+
+        # Temp file in the system tmpdir; we delete=False so the
+        # filesink can write to a path that outlives the Python
+        # NamedTemporaryFile object.
+        f = tempfile.NamedTemporaryFile(
+            delete=False, suffix=".ogg", prefix="banter-voice-")
+        self._record_path = f.name
+        f.close()
+
+        # Opus-in-Ogg keeps the file small and works in any modern
+        # GStreamer install. autoaudiosrc picks pulsesrc / pipewiresrc
+        # / alsasrc as appropriate for the host.
+        pipeline_str = (
+            f"autoaudiosrc ! audioconvert ! audioresample ! "
+            f"opusenc ! oggmux ! filesink location={self._record_path}"
+        )
+        try:
+            pipeline = Gst.parse_launch(pipeline_str)
+            ret = pipeline.set_state(Gst.State.PLAYING)
+            if ret == Gst.StateChangeReturn.FAILURE:
+                raise RuntimeError("audio pipeline could not start")
+        except Exception as e:
+            dbg("voice record start failed: %s", e)
+            self._win.toast(f"Recording failed: {e}")
+            try: os.unlink(self._record_path)
+            except Exception: pass
+            self._record_path = None
+            return
+
+        self._recording_pipeline = pipeline
+        self._mic_btn.set_icon_name("media-playback-stop-symbolic")
+        self._mic_btn.add_css_class("destructive-action")
+        self._mic_btn.set_tooltip_text("Stop recording")
+        self._win.toast("Recording…")
+
+    def _stop_recording(self):
+        pipeline = self._recording_pipeline
+        if pipeline is None:
+            return
+        self._recording_pipeline = None
+
+        self._mic_btn.set_icon_name("audio-input-microphone-symbolic")
+        self._mic_btn.remove_css_class("destructive-action")
+        self._mic_btn.set_tooltip_text("Record voice message")
+
+        path = self._record_path
+        self._record_path = None
+        cid  = self._conv_id()
+        api  = self._api
+        win  = self._win
+
+        self._win.toast("Saving voice message…")
+
+        def worker():
+            # Send EOS so the muxer finalises the OGG headers, then
+            # wait briefly for the bus to confirm before tearing the
+            # pipeline down.
+            bus = pipeline.get_bus()
+            pipeline.send_event(Gst.Event.new_eos())
+            bus.timed_pop_filtered(2 * Gst.SECOND, Gst.MessageType.EOS)
+            pipeline.set_state(Gst.State.NULL)
+
+            file_id = api.upload_file(cid, path)
+            try: os.unlink(path)
+            except Exception: pass
+
+            if file_id:
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                name  = f"voice-{stamp}.ogg"
+                GLib.idle_add(self._set_pending_file, file_id, name)
+            else:
+                GLib.idle_add(lambda: win.toast("Voice upload failed"))
+
+        run_in_background(worker)
 
 
