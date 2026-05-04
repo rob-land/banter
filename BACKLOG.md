@@ -69,7 +69,16 @@ and haven't been touched yet. Loose priority order, top = most useful.
   toggle for multi-pick across both images and videos
 - ~~Start / Join Call~~ (browser-launch) — call button in chat headers
   hits `GET /v3/conversations/{cid}/call` and opens the returned
-  Teams meeting URL via the system browser
+  Teams meeting URL via the system browser. **WIP / partially broken:**
+  the Teams web meeting drops the visitor in a "someone will let you
+  in" lobby that never resolves, and on mobile the Teams web flow
+  forwards to the Play Store rather than completing in-browser. Same
+  story for the Faye `group.call.started` desktop notification's Join
+  button — fires correctly, but the resulting Teams page is unusable.
+  The notification itself is still useful (the official GroupMe
+  client shows nothing). Real fix likely requires speaking the ACS
+  Web Calling SDK protocol natively (Trouter WebSocket + WebRTC +
+  Skype conv API) — see "Full in-app calls" below.
 
 ## Edit-message UX polish
 

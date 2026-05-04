@@ -523,6 +523,11 @@ class BanterWindow(Adw.ApplicationWindow):
         if msg_id:
             self._last_msg_ids[key] = msg_id
 
+        # Call-started/ended events get a richer notification with a
+        # Join button (and we surface them even when the chat is open).
+        if self._handle_call_event_notification("group", gid, subject):
+            return
+
         if self._is_conv_open("group", gid):
             return
         row.bump_unread()
@@ -563,6 +568,13 @@ class BanterWindow(Adw.ApplicationWindow):
         msg_id = str(subject.get("id", ""))
         if msg_id:
             self._last_msg_ids[key] = msg_id
+
+        # Same call-event handling as groups — DMs may not actually
+        # carry call events in practice (no HAR evidence), but the
+        # event shape would be identical so the handler is a no-op
+        # cost and gives us coverage if it ever fires.
+        if self._handle_call_event_notification("dm", other_id, subject):
+            return
 
         if self._is_conv_open("dm", other_id):
             return
@@ -1167,16 +1179,28 @@ class BanterWindow(Adw.ApplicationWindow):
             self.chats_stack_page.set_needs_attention(any_unread_persistent)
 
     def _send_desktop_notification(self, title: str, body: str,
-                                    tag: str = "banter-msg"):
-        """Send a desktop notification via GApplication (works in Flatpak)."""
+                                    tag: str = "banter-msg",
+                                    buttons: list = None,
+                                    mute_key: str = None):
+        """Send a desktop notification via GApplication (works in Flatpak).
+
+        `buttons` is an optional list of (label, detailed_action) pairs
+        passed straight to `Gio.Notification.add_button` — used by the
+        call-started notification to attach a "Join" action.
+
+        `mute_key` lets the caller specify the mute lookup key directly
+        when the tag doesn't follow the `group-` / `dm-` convention
+        (e.g. call notifications use `call-group-<gid>` to avoid being
+        clobbered by an unrelated group message). When omitted we fall
+        back to deriving the key from the tag prefix."""
         # Per-conversation mute. Tag layout is "group-{gid}" or
         # "dm-{other_id}"; the config store is unified, with DM keys
         # prefixed "dm:" so they don't collide with group ids.
-        mute_key = None
-        if tag.startswith("group-"):
-            mute_key = tag[len("group-"):]
-        elif tag.startswith("dm-"):
-            mute_key = "dm:" + tag[len("dm-"):]
+        if mute_key is None:
+            if tag.startswith("group-"):
+                mute_key = tag[len("group-"):]
+            elif tag.startswith("dm-"):
+                mute_key = "dm:" + tag[len("dm-"):]
         if mute_key and self._config.is_muted(mute_key):
             dbg("notification suppressed (muted): %s", tag)
             return
@@ -1191,10 +1215,68 @@ class BanterWindow(Adw.ApplicationWindow):
             notif.set_priority(Gio.NotificationPriority.HIGH)
             # Default action brings the window to the foreground on click
             notif.set_default_action("app.activate")
+            for label, detailed in (buttons or ()):
+                notif.add_button(label, detailed)
             app.send_notification(tag, notif)
             dbg("notification sent: [%s] %s – %s", tag, title, body[:60])
         except Exception as e:
             dbg("notification error: %s", e)
+
+    def _withdraw_notification(self, tag: str):
+        try:
+            app = self.get_application()
+            if app:
+                app.withdraw_notification(tag)
+        except Exception as e:
+            dbg("notification withdraw failed (%s): %s", tag, e)
+
+    def _handle_call_event_notification(self, conv_type: str,
+                                        conv_id: str, subject: dict) -> bool:
+        """Fire a call-specific notification with a Join button when a
+        Faye `group.call.started` system message arrives, or withdraw
+        the prior start notification on `group.call.ended`. Returns
+        True iff the subject was a call event and was handled — caller
+        should skip its generic notification path in that case.
+
+        Unlike regular messages we surface this even when the chat is
+        open, since the Join action is actionable from the OS notification
+        layer too (and a call is a higher-signal event than a text)."""
+        event = subject.get("event") or {}
+        et = event.get("type", "")
+        tag = f"call-{conv_type}-{conv_id}"
+        mute_key = (conv_id if conv_type == "group" else f"dm:{conv_id}")
+
+        if et == "group.call.ended":
+            # Last participant left; clear the start notification.
+            self._withdraw_notification(tag)
+            return True
+
+        if et != "group.call.started":
+            return False
+
+        data = event.get("data") or {}
+        starter = ((data.get("user") or {}).get("nickname")
+                   or "Someone")
+        # Conversation display name for the title
+        row = self._rows.get(self._conv_key(conv_type, conv_id))
+        if row and conv_type == "group":
+            title = (row.conv or {}).get("name") or "Group call"
+        elif row and conv_type == "dm":
+            other = (row.conv or {}).get("other_user") or {}
+            title = other.get("name") or "Call"
+        else:
+            title = "GroupMe call"
+
+        body = f"📞 {starter} started a call"
+        # Detailed-action form passes the conv_id as the string param.
+        # Group ids and DM <lo>+<hi> conv ids are both safe in this
+        # encoding (digits/+/-).
+        join_action = f"app.call-join::{conv_id}"
+        self._send_desktop_notification(
+            title, body, tag=tag,
+            buttons=[("Join", join_action)],
+            mute_key=mute_key)
+        return True
 
     def _register_group_actions(self, group: dict):
         """Register Gio.SimpleActions on the window for the current group menu."""

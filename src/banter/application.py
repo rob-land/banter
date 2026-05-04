@@ -43,9 +43,33 @@ class BanterApplication(Adw.Application):
         self.add_action(quit_action)
         self.set_accels_for_action("app.quit", ["<ctrl>q"])
 
+        # Notification button: Join the call. The detailed action passes
+        # the conversation id as the string parameter; we route to the
+        # window's existing call-launch path (fetch a fresh meeting URL
+        # via /v3/conversations/{cid}/call and open it in the browser).
+        # The Faye `group.call.started` event's `meeting_id` lacks the
+        # passcode, so re-fetching is required — can't just open the
+        # event-supplied URL.
+        call_join_action = Gio.SimpleAction.new(
+            "call-join", GLib.VariantType.new("s"))
+        call_join_action.connect("activate", self._on_call_join)
+        self.add_action(call_join_action)
+
     def _bring_to_front(self):
         if self._window:
             self._window.present()
+
+    def _on_call_join(self, _action, param):
+        """Handler for the `app.call-join` notification button. Re-uses
+        the window's existing call-launch path so we share the toast
+        and error handling."""
+        if not self._window or param is None:
+            return
+        gid = param.get_string()
+        if not gid:
+            return
+        self._bring_to_front()
+        self._window._on_call_clicked(None, gid)
 
     def _on_activate(self, *_):
         self._load_css()
