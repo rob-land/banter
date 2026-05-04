@@ -43,6 +43,11 @@ class ChatView(Gtk.Box):
         self._poll_ms      = self.DEFAULT_POLL_INTERVAL
         self._oldest_id   = None
         self._newest_id   = None
+        # Last message-id we successfully POSTed a read receipt for.
+        # Throttle guard: only fire a new receipt when `_newest_id`
+        # advances past this. None means we've never sent one for
+        # this ChatView instance.
+        self._last_receipt_id : str | None = None
         self._oldest_date = None
         self._newest_date = None
         self._loading     = False
@@ -887,6 +892,9 @@ class ChatView(Gtk.Box):
             self._oldest_date = self._msg_date(msgs[-1])
             self._newest_date = self._msg_date(msgs[0])
         GLib.idle_add(self._scroll_bottom)
+        # Mark these messages as read on the server now that they're
+        # rendered + scrolled into view (initial load lands at-bottom).
+        self._send_read_receipt()
 
     def _prepend_old(self, msgs):
         self._loading = False
@@ -968,6 +976,10 @@ class ChatView(Gtk.Box):
         if self._at_bottom:
             # User is at the bottom — scroll to reveal new messages
             self._scroll_bottom()
+            # …and tell the server we've seen them. _send_read_receipt
+            # is a no-op if `_newest_id` hasn't actually advanced past
+            # the last receipt we sent (e.g. our own outgoing echo).
+            self._send_read_receipt()
         elif msgs:
             # Reading older messages: track unread state for the jump
             # button. msgs is newest-first, so msgs[-1] is the OLDEST of
@@ -1011,12 +1023,19 @@ class ChatView(Gtk.Box):
         # the resulting value/upper mismatch must not be misread as the
         # user scrolling away (which would abandon the pin sequence).
         at_bottom = adj.get_value() >= (adj.get_upper() - adj.get_page_size() - 200)
+        was_above = not self._at_bottom
         self._at_bottom = at_bottom
         if at_bottom:
             # User scrolled (or auto-scrolled) back to the bottom —
             # everything is now seen, hide the jump affordance.
             self._clear_unread_state()
             self._jump_btn.set_visible(False)
+            # If they were scrolled up while new messages arrived (so
+            # the read pointer didn't advance at the time), catch up
+            # the receipt now. No-op when `_newest_id` matches the
+            # last-sent value.
+            if was_above:
+                self._send_read_receipt()
         else:
             # While scrolled up, the jump button stays visible as a
             # quick way back regardless of whether new messages have
@@ -1636,6 +1655,48 @@ class ChatView(Gtk.Box):
         parent = bubble.get_parent()
         if parent is not None:
             parent.remove(bubble)
+
+    # ── Read receipts ──
+    def _send_read_receipt(self):
+        """Mark the conversation read up to `_newest_id` if we haven't
+        already done so.
+
+        Idempotent + throttled by `_last_receipt_id`: repeated calls
+        with the same newest message no-op. Skipped when the user is
+        scrolled away from the bottom — they haven't actually seen
+        the latest content, and silently advancing the read pointer
+        would tell other clients we *had*. Fired from initial load,
+        push line.create while at-bottom, the DM poll path, and on
+        scroll-back-to-bottom."""
+        target = self._newest_id
+        if not target:
+            return
+        if self._last_receipt_id == target:
+            return
+        if not self._at_bottom:
+            return
+        cid = self._conv_id()
+        api = self._api
+        # Optimistically advance the throttle marker before the network
+        # round-trip — prevents back-to-back fires (e.g. push event
+        # arriving during initial load) from each issuing a duplicate
+        # POST. Reverted on failure.
+        prev = self._last_receipt_id
+        self._last_receipt_id = target
+
+        def worker():
+            ok = api.read_receipt(cid) is not None
+            if not ok:
+                # Roll back so the next trigger retries.
+                GLib.idle_add(self._on_receipt_failed, prev)
+        run_in_background(worker)
+
+    def _on_receipt_failed(self, prev_id):
+        # Only roll back if nothing else advanced the marker in the
+        # meantime — otherwise a successful follow-up receipt would
+        # get clobbered by this rollback.
+        if self._last_receipt_id and self._last_receipt_id == self._newest_id:
+            self._last_receipt_id = prev_id
 
     # ── Attachments (image / file) ──
     def _conv_id(self) -> str:

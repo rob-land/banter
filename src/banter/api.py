@@ -591,6 +591,30 @@ class GroupMeAPI:
             return []
         return (r.get("response") or {}).get("albums") or []
 
+    # ── Read receipts ──
+    def read_receipt(self, conv_id: str, msg_id: str = None):
+        """Mark a conversation read up to `msg_id`, or up to the
+        latest message when `msg_id` is omitted.
+
+        Two endpoints, both with an EMPTY body and the standard
+        token:
+            POST /v3/conversations/{cid}/read_receipt          (latest)
+            POST /v3/conversations/{cid}/{mid}/read_receipt    (specific)
+
+        `cid` is the standard conversation_id — `gid` for groups,
+        `<lo>+<hi>` for DMs. Returns the parsed receipt dict
+        (`{conversation_id, message_id, user_id, read_at}`) or None
+        on failure. The caller doesn't usually need the returned
+        message_id — it's just a confirmation."""
+        if msg_id:
+            path = f"/conversations/{conv_id}/{msg_id}/read_receipt"
+        else:
+            path = f"/conversations/{conv_id}/read_receipt"
+        r = self._req("POST", path)
+        if not self._ok(r):
+            return None
+        return (r.get("response") or {}).get("read_receipt")
+
     # ── Calls (Microsoft Teams meetings under the hood) ──
     # GroupMe calls aren't a Banter-implementable WebRTC feature —
     # the server returns a Teams meeting URL and an Azure
