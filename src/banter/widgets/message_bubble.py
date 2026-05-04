@@ -13,6 +13,7 @@ from ..constants import CACHE_DIR
 from ..helpers import set_avatar_from_url, set_pack_emoji, _cache_key
 from .misc import ImageAttachment, VideoAttachment, VoiceAttachment, FileAttachment
 from .event_card import EventCard
+from .album_card import AlbumCard
 from .poll_card import PollCard
 
 # ── URL / email linkification ─────────────────────────────────────────
@@ -391,6 +392,18 @@ class MessageBubble(Gtk.Box):
                 if poll_id:
                     bubble.append(PollCard(
                         api, group_id, me_id, poll_id, window))
+
+        # Album-create / add-media events live on `msg.event`, NOT
+        # in attachments — separate dispatch from the loop above.
+        # We render only on `gallery.album.create`; the `.add.media`
+        # follow-up has the same data shape but firing a card on
+        # every "added N photos" message would clutter the chat.
+        ev = msg.get("event") or {}
+        if ev.get("type") == "gallery.album.create":
+            album_data = (ev.get("data") or {}).get("album") or {}
+            if album_data.get("album_id"):
+                bubble.append(AlbumCard(
+                    api, group_id, album_data, window))
 
         # Timestamp (mine only, shown inside bubble)
         self._ts_box = None
