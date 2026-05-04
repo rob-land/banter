@@ -164,6 +164,10 @@ class MessageBubble(Gtk.Box):
         # Pin indicator widget (hidden by default) — toggled by
         # `set_pinned()` whenever the chat view's pinned set changes.
         self._pin_icon = self._make_pin_icon()
+        # DM "Read" indicator for own bubbles — toggled by `set_read()`
+        # when ChatView's known DM read_receipt advances past this
+        # message's id. Hidden by default.
+        self._read_icon = self._make_read_icon()
 
         # Cache this sender's name so reaction tooltips can resolve it
         uid  = str(msg.get("user_id", ""))
@@ -419,6 +423,9 @@ class MessageBubble(Gtk.Box):
                 label=datetime.fromtimestamp(ts).strftime("%-I:%M %p"))
             tl.add_css_class("dim-caption")
             self._ts_box.append(tl)
+            # Read indicator pinned at the end of the timestamp row so
+            # the order reads "{pin?} {edited?} 12:34 PM ✓".
+            self._ts_box.append(self._read_icon)
             bubble.append(self._ts_box)
 
         if is_mine:
@@ -1106,6 +1113,35 @@ class MessageBubble(Gtk.Box):
             return cv.is_pinned(self.msg.get("id"))
         except Exception:
             return False
+
+    # ── DM "Read" indicator ──────────────────────────────────────────
+    def _make_read_icon(self):
+        # Single check icon — kept dim so it doesn't compete with the
+        # bubble content. Tooltip is filled in by set_read() with the
+        # exact "Read at HH:MM" so the user can tell when.
+        img = Gtk.Image.new_from_icon_name("object-select-symbolic")
+        img.set_pixel_size(12)
+        img.add_css_class("dim-label")
+        img.set_visible(False)
+        return img
+
+    def set_read(self, read_at):
+        """Show / hide the Read indicator (own DM bubbles only).
+
+        `read_at` is the unix timestamp from the other user's
+        read_receipt — used for the tooltip — or None to hide."""
+        if self._read_icon is None:
+            return
+        if not read_at:
+            self._read_icon.set_visible(False)
+            return
+        try:
+            tip = "Read " + datetime.fromtimestamp(
+                int(read_at)).strftime("%-I:%M %p")
+        except Exception:
+            tip = "Read"
+        self._read_icon.set_tooltip_text(tip)
+        self._read_icon.set_visible(True)
 
     def _action_pin(self, *_):
         self._do_pin(True)

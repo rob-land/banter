@@ -48,6 +48,12 @@ class ChatView(Gtk.Box):
         # advances past this. None means we've never sent one for
         # this ChatView instance.
         self._last_receipt_id : str | None = None
+        # DM-only: most-recent read pointer reported by the OTHER user
+        # via the read_receipt field on /direct_messages. Drives the
+        # ✓ Read indicator on our own bubbles. (Groups have no
+        # per-member read data — we leave this None for groups.)
+        self._other_read_id   : str | None = None
+        self._other_read_at   : int = 0
         self._oldest_date = None
         self._newest_date = None
         self._loading     = False
@@ -458,6 +464,17 @@ class ChatView(Gtk.Box):
             return
 
         if ev_type == "line.create":
+            # In DMs, line.create lacks a group_id, so the gid-match
+            # below skips them. The poll loop covers message
+            # ingestion, but a push event from the other user is also
+            # a useful signal that they're active — and may have just
+            # advanced their read pointer past our latest. Kick a
+            # receipt refresh so the ✓ updates without waiting for
+            # the next poll tick (~15s).
+            if (self._is_dm
+                    and str(subject.get("user_id", "")) == str(self._other_uid)):
+                self._refresh_dm_read_receipt()
+
             if str(subject.get("group_id", "")) == self._gid:
                 # Sender finished typing — drop them from the indicator.
                 sender_uid = str(subject.get("user_id", ""))
@@ -546,19 +563,24 @@ class ChatView(Gtk.Box):
                 new_msgs = self._api.get_dm_messages(
                     other_uid, since_id=newest_id, limit=20)
                 refreshed = []
+                # Piggyback the read-pointer fetch on the same tick.
+                receipt = self._api.get_dm_read_receipt(other_uid)
             else:
                 new_msgs  = self._api.get_messages(
                     gid, since_id=newest_id, limit=20)
                 refreshed = self._api.get_messages(
                     gid, after_id=oldest_id, limit=20) if oldest_id else []
-            GLib.idle_add(self._on_poll_result, new_msgs, refreshed)
+                receipt = None
+            GLib.idle_add(self._on_poll_result, new_msgs, refreshed, receipt)
 
         run_in_background(worker)
         return True
 
-    def _on_poll_result(self, new_msgs, refreshed):
+    def _on_poll_result(self, new_msgs, refreshed, receipt=None):
         if new_msgs:
             self._append_new(new_msgs)
+        if receipt is not None:
+            self._on_dm_read_receipt(receipt)
         for msg in refreshed:
             mid = str(msg.get("id", ""))
             if mid in self._bubble_map:
@@ -895,6 +917,10 @@ class ChatView(Gtk.Box):
         # Mark these messages as read on the server now that they're
         # rendered + scrolled into view (initial load lands at-bottom).
         self._send_read_receipt()
+        # In DMs: also kick off a fetch for the OTHER user's read
+        # pointer so we can stamp ✓ on our own bubbles they've seen.
+        if self._is_dm:
+            self._refresh_dm_read_receipt()
 
     def _prepend_old(self, msgs):
         self._loading = False
@@ -1697,6 +1723,68 @@ class ChatView(Gtk.Box):
         # get clobbered by this rollback.
         if self._last_receipt_id and self._last_receipt_id == self._newest_id:
             self._last_receipt_id = prev_id
+
+    # DMs only: poll for the other user's read pointer and, if it
+    # advanced, refresh the Read indicator on our own bubbles. Cheap
+    # one-message GET (`limit=1`) hung off the existing _poll tick
+    # and the initial-load completion.
+    def _refresh_dm_read_receipt(self):
+        if not self._is_dm:
+            return
+        other_uid = self._other_uid
+        api       = self._api
+
+        def worker():
+            receipt = api.get_dm_read_receipt(other_uid)
+            GLib.idle_add(self._on_dm_read_receipt, receipt)
+
+        run_in_background(worker)
+
+    def _on_dm_read_receipt(self, receipt):
+        if not isinstance(receipt, dict):
+            return
+        mid = str(receipt.get("message_id") or "")
+        rat = int(receipt.get("read_at") or 0)
+        if not mid:
+            return
+        # Skip the per-bubble walk if the pointer hasn't moved.
+        if mid == self._other_read_id and rat == self._other_read_at:
+            return
+        self._other_read_id = mid
+        self._other_read_at = rat
+        self._apply_dm_read_receipt()
+
+    @staticmethod
+    def _id_le(a, b) -> bool:
+        """`a <= b` for GroupMe message ids. The ids are 18-digit
+        timestamp-derived integers; lexicographic compare happens to
+        agree, but int compare is the documented stable order so use
+        that and fall back to lex on parse failure."""
+        try:
+            return int(a) <= int(b)
+        except (TypeError, ValueError):
+            return str(a) <= str(b)
+
+    def _apply_dm_read_receipt(self):
+        """Walk own bubbles and toggle the Read indicator based on the
+        latest known `_other_read_id`. Bubbles whose id <= the read
+        pointer get the ✓; everything past it gets cleared (handles
+        the rare case where the pointer somehow regressed)."""
+        if not self._is_dm or not self._other_read_id:
+            return
+        ptr = self._other_read_id
+        rat = self._other_read_at
+        for mid, bubble in self._bubble_map.items():
+            try:
+                if not getattr(bubble, "is_mine", False):
+                    continue
+                if self._id_le(mid, ptr):
+                    bubble.set_read(rat)
+                else:
+                    bubble.set_read(None)
+            except Exception:
+                # Bubble may have been removed or torn down; skip.
+                continue
 
     # ── Attachments (image / file) ──
     def _conv_id(self) -> str:

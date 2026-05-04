@@ -592,6 +592,28 @@ class GroupMeAPI:
         return (r.get("response") or {}).get("albums") or []
 
     # ── Read receipts ──
+    def get_dm_read_receipt(self, other_user_id):
+        """Return the OTHER user's last-read pointer in a DM.
+
+        `GET /v3/direct_messages?other_user_id=X` carries a top-level
+        `read_receipt` field — `{id, chat_id, message_id, user_id,
+        read_at}` — whose `user_id` is the *other* participant. Use
+        the message_id to decide whether each of our own bubbles in
+        this DM has been seen yet.
+
+        Limit=1 keeps the round-trip cheap; we only care about the
+        receipt, not the message. Returns the receipt dict or None.
+
+        Note: groups don't have a per-member analogue. The conversation-
+        list endpoints carry only the SELF user's `last_read_message_id`
+        (sidebar unread tracking), not other members'."""
+        r = self._req("GET", "/direct_messages",
+                      params={"other_user_id": str(other_user_id),
+                              "limit": 1})
+        if not self._ok(r):
+            return None
+        return (r.get("response") or {}).get("read_receipt")
+
     def read_receipt(self, conv_id: str, msg_id: str = None):
         """Mark a conversation read up to `msg_id`, or up to the
         latest message when `msg_id` is omitted.
