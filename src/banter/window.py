@@ -10,7 +10,8 @@ from .api import GroupMeAPI
 from .push import GroupMePush
 from .mock_api import MockGroupMeAPI
 from .helpers import (
-    set_avatar_from_url, ensure_packs_loaded, is_hidden_system_message)
+    set_avatar_from_url, ensure_packs_loaded, is_hidden_system_message,
+    format_preview)
 from .widgets.base import StandardDialog
 from .widgets.conversation_row import ConversationRow, ContactRow
 from .widgets.chat_view import ChatView
@@ -505,7 +506,11 @@ class BanterWindow(Adw.ApplicationWindow):
         if row is None:
             return
         sender = subject.get("name", "")
-        text   = (subject.get("text") or "").strip()
+        # Run preview text through format_preview so the server's
+        # voice-note downgrade warning is replaced with a concise
+        # "🎤 Voice message" instead of dominating the sidebar.
+        preview_text = format_preview(subject.get("text"),
+                                      subject.get("attachments"))
 
         # Always move to top, update preview + time — keeps the
         # sidebar in most-recent order regardless of which chat
@@ -515,7 +520,7 @@ class BanterWindow(Adw.ApplicationWindow):
         ts = subject.get("created_at")
         if ts:
             row.update_time(ts)
-        row.update_preview(sender, text)
+        row.update_preview(sender, preview_text)
 
         # Mirror the bg_poll's _last_msg_ids bookkeeping so the next
         # poll doesn't re-fire a notification for the same message.
@@ -531,10 +536,10 @@ class BanterWindow(Adw.ApplicationWindow):
         if self._is_conv_open("group", gid):
             return
         row.bump_unread()
-        notif_text = text or "📎 attachment"
         name = (row.conv or {}).get("name", "GroupMe")
         self._send_desktop_notification(
-            name, f"{sender}: {notif_text}", tag=f"group-{gid}")
+            name, f"{sender}: {preview_text or '📎 attachment'}",
+            tag=f"group-{gid}")
 
     def _handle_dm_push_message(self, subject: dict):
         """Real-time DM notification path. Without this, DMs only
@@ -553,7 +558,8 @@ class BanterWindow(Adw.ApplicationWindow):
         row      = self._rows.get(key)
 
         sender = subject.get("name") or "Someone"
-        text   = (subject.get("text") or "").strip()
+        preview_text = format_preview(subject.get("text"),
+                                      subject.get("attachments"))
 
         if row is not None:
             self.chats_list.remove(row)
@@ -561,7 +567,7 @@ class BanterWindow(Adw.ApplicationWindow):
             ts = subject.get("created_at")
             if ts:
                 row.update_time(ts)
-            row.update_preview(sender, text)
+            row.update_preview(sender, preview_text)
 
         # Mirror bg_poll bookkeeping so the next /chats poll doesn't
         # double-fire a notification for the same message.
@@ -580,9 +586,8 @@ class BanterWindow(Adw.ApplicationWindow):
             return
         if row is not None:
             row.bump_unread()
-        notif_text = text or "📎 attachment"
         self._send_desktop_notification(
-            sender, notif_text, tag=f"dm-{other_id}")
+            sender, preview_text or "📎 attachment", tag=f"dm-{other_id}")
 
     # ── Placeholder ──
     def _show_placeholder(self):
@@ -1091,15 +1096,15 @@ class BanterWindow(Adw.ApplicationWindow):
 
             # Move to top of unified chats list + refresh preview/time
             preview = msgs.get("preview", {}) or {}
+            preview_text = format_preview(preview.get("text"),
+                                          preview.get("attachments"))
             if row is not None:
                 self.chats_list.remove(row)
                 self.chats_list.insert(row, 0)
                 ts = msgs.get("last_message_created_at")
                 if ts:
                     row.update_time(ts)
-                row.update_preview(
-                    preview.get("nickname", ""),
-                    preview.get("text") or "")
+                row.update_preview(preview.get("nickname", ""), preview_text)
 
             # Self-echo filter: group preview has nickname but no
             # user_id, so we fall back to comparing against our own
@@ -1113,10 +1118,10 @@ class BanterWindow(Adw.ApplicationWindow):
             any_unread = True
             if row is not None:
                 row.bump_unread()
-            text = (preview.get("text") or "📎 attachment").strip()
+            notif_text = preview_text or "📎 attachment"
             self._send_desktop_notification(
                 g.get("name", "GroupMe"),
-                f"{sender}: {text}" if sender else text,
+                f"{sender}: {notif_text}" if sender else notif_text,
                 tag=f"group-{gid}")
 
         # ── DMs ──
@@ -1139,6 +1144,7 @@ class BanterWindow(Adw.ApplicationWindow):
             self._last_msg_ids[key] = last_id
 
             # Move to top + refresh preview/time
+            preview_text = format_preview(lm.get("text"), lm.get("attachments"))
             if row is not None:
                 self.chats_list.remove(row)
                 self.chats_list.insert(row, 0)
@@ -1150,7 +1156,7 @@ class BanterWindow(Adw.ApplicationWindow):
                     sender_for_preview = "You"
                 else:
                     sender_for_preview = chat.get("other_user", {}).get("name", "")
-                row.update_preview(sender_for_preview, lm.get("text") or "")
+                row.update_preview(sender_for_preview, preview_text)
 
             # Self-echo filter: DM last_message has user_id, so this
             # is exact (unlike groups).
@@ -1165,9 +1171,9 @@ class BanterWindow(Adw.ApplicationWindow):
             if row is not None:
                 row.bump_unread()
             other_name = chat.get("other_user", {}).get("name", "Someone")
-            text       = (lm.get("text") or "📎 attachment").strip()
             self._send_desktop_notification(
-                other_name, text, tag=f"dm-{other_id}")
+                other_name, preview_text or "📎 attachment",
+                tag=f"dm-{other_id}")
 
         # Tab attention dot reflects persistent unread state, not just
         # "any new this poll" — derive from the per-row counters that

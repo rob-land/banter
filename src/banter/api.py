@@ -920,6 +920,41 @@ class GroupMeAPI:
                 f"?access_token={urllib.parse.quote(self.token or '')}"
                 f"&_dl={int(time.time() * 1000)}")
 
+    def download_audio(self, url: str, dest_path: str) -> bool:
+        """Download a voice-note (audio attachment) from m.groupme.com.
+
+        Voice notes are `type:"audio"` attachments hosted at
+        `m.groupme.com/uploads/{upload_id}/original.m4a`. Auth uses a
+        `Cookie: token=<access_token>` header rather than the usual
+        `?access_token=` query (different from file.groupme.com).
+        m.groupme.com responds with a 301 to a signed Azure CDN URL
+        valid ~24h; urllib follows the redirect transparently and
+        Azure's query-string SAS handles auth on the second hop.
+
+        Streams in 64 KB chunks. Returns True on success."""
+        if not url:
+            return False
+        req = urllib.request.Request(url)
+        req.add_header("Cookie",         f"token={self.token or ''}")
+        req.add_header("User-Agent",     f"GroupMe-GNOME/{APP_VERSION}")
+        req.add_header("X-Requested-With", "GroupMeWeb/1.2.3")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp, \
+                 open(dest_path, "wb") as out:
+                while True:
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+            dbg("download_audio: ok (%s)", url)
+            return True
+        except urllib.error.HTTPError as e:
+            dbg("download_audio: HTTP %d", e.code)
+            return False
+        except Exception as e:
+            dbg("download_audio: exception %s", e)
+            return False
+
     def download_file(self, cid: str, file_id: str, dest_path: str) -> bool:
         """Stream an authenticated file attachment to `dest_path`.
         Returns True on success.

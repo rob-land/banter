@@ -27,11 +27,15 @@ and haven't been touched yet. Loose priority order, top = most useful.
   attachment.
 - **Album edit / delete UI** — `PUT /v3/conversations/{cid}/albums/update`
   is captured but no UI calls it. No delete endpoint captured yet.
-- **Voice-message attachment shape** — Banter records and uploads as a
-  generic file attachment (OGG). The official client uses a different
-  attachment type that renders as an inline voice clip. Capture a HAR
-  while sending a voice message from the web client to learn the
-  upload endpoint and attachment shape.
+- **Voice-message send shape** — receive side now lands as an inline
+  voice clip (`type:"audio"` attachment via `m.groupme.com`, see
+  `VoiceAttachment`). Banter still uploads outgoing recordings as
+  generic OGG files via `file.groupme.com`, so they reach official
+  clients as a download icon rather than a voice clip. Capture a
+  send-side HAR (web client recording + sending a voice message) to
+  learn the upload host/path; based on the upload-id format it's
+  almost certainly `m.groupme.com` rather than `file.groupme.com`,
+  and the encoder needs to produce M4A/AAC + a peaks array.
 - **Inline call presence** — `GET /v3/conversations/{cid}/call` returns
   the active meeting URL for a conversation. Polling that (or finding
   the matching push event) would let Banter show a "Call in progress —
@@ -63,7 +67,10 @@ and haven't been touched yet. Loose priority order, top = most useful.
 - ~~Voice messages~~ (partial) — compose-bar mic button records via
   GStreamer (Opus/Ogg) and uploads through `upload_file`; recipients
   see a generic file rather than an inline voice clip until the
-  proper voice-clip endpoint is captured
+  proper voice-clip endpoint is captured. **Receive side now inline:**
+  `type:"audio"` attachments render as a play button + waveform +
+  duration via `VoiceAttachment`, with the server's "please update"
+  fallback text suppressed.
 - ~~Album creation, browsing, multi-select add~~ — `AlbumCreatorDialog`,
   `AlbumViewDialog`, `AlbumPickerDialog`; gallery has a Select
   toggle for multi-pick across both images and videos

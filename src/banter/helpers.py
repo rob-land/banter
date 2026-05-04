@@ -12,6 +12,39 @@ from .async_utils import run_in_background
 
 # ─────────────────────────── Message helpers ─────────────────────
 
+def format_preview(text, attachments=None) -> str:
+    """Build the sidebar/notification preview snippet for a message.
+
+    Substitutes a friendly placeholder for the server-injected
+    "⚠️You received a voice note. Please update to the latest version
+    of GroupMe..." downgrade-warning text that GroupMe sets on every
+    `audio` (voice-note) message — without this, every voice-note
+    conversation displays a "please update" warning in the sidebar.
+
+    Detects voice notes via the `audio` attachment type when the
+    caller has the attachment list, and falls back to a text-prefix
+    match for preview-only payloads (some `messages.preview` shapes
+    don't include attachments)."""
+    text = (text or "").strip()
+    attachments = attachments or []
+    has_audio = any(
+        isinstance(a, dict) and a.get("type") == "audio"
+        for a in attachments)
+    if has_audio:
+        return "🎤 Voice message"
+    # Fallback when only the text was forwarded. The leading "⚠"
+    # (U+26A0) is consistent across the localised variants we've seen.
+    # We also require "voice note" to keep the rule tight in case
+    # GroupMe re-uses the warning prefix for an unrelated downgrade.
+    if text.startswith("⚠") and "voice note" in text.lower():
+        return "🎤 Voice message"
+    if text:
+        return text
+    if attachments:
+        return "📎 attachment"
+    return ""
+
+
 def is_hidden_system_message(msg: dict) -> bool:
     """Return True if `msg` is a GroupMe-issued system notification
     that the UI should suppress entirely.
@@ -80,6 +113,44 @@ def load_image_async(url: str, callback, avatar: bool = False):
         except Exception as e:
             dbg("img-fetch: failed %s – %s", url, e)
             try:
+                fail.write_bytes(b"")
+            except Exception:
+                pass
+            GLib.idle_add(callback, None)
+            return
+        GLib.idle_add(callback, str(path))
+
+    run_in_background(worker)
+
+
+def load_audio_async(api, url: str, callback):
+    """Download and cache a voice-note audio file; call
+    callback(path_or_None) on the main thread.
+
+    Mirrors `load_image_async`'s caching pattern (key.audio + key.audio.fail),
+    but routes through `api.download_audio` because m.groupme.com requires
+    a `Cookie: token=...` header that the unauth'd image fetcher lacks."""
+    if not url:
+        GLib.idle_add(callback, None)
+        return
+
+    def worker():
+        key  = _cache_key(url)
+        path = CACHE_DIR / f"{key}.audio"
+        fail = CACHE_DIR / f"{key}.audio.fail"
+        if path.exists():
+            dbg("audio-cache: hit %s", path.name)
+            GLib.idle_add(callback, str(path))
+            return
+        if fail.exists():
+            GLib.idle_add(callback, None)
+            return
+        dbg("audio-fetch: %s", url)
+        ok = api.download_audio(url, str(path))
+        if not ok:
+            try:
+                if path.exists():
+                    path.unlink()
                 fail.write_bytes(b"")
             except Exception:
                 pass

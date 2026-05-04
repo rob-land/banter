@@ -5,7 +5,7 @@ from gi.repository import Gtk, Adw
 
 from ..constants import esc
 from ..config import Config
-from ..helpers import set_avatar_from_url
+from ..helpers import set_avatar_from_url, format_preview
 
 
 # ─────────────────────────── Group Row ───────────────────────────
@@ -170,21 +170,18 @@ class ConversationRow(Adw.ActionRow):
         if self.conv_type == "group":
             preview = conv.get("messages", {}).get("preview", {}) or {}
             sender  = preview.get("nickname", "")
-            text    = (preview.get("text") or "").strip()
-            if not text and preview.get("attachments"):
-                text = "📎 attachment"
+            text    = format_preview(preview.get("text"),
+                                     preview.get("attachments"))
             return sender, text
 
         # DM
         lm        = conv.get("last_message", {}) or {}
-        text      = (lm.get("text") or "").strip()
+        text      = format_preview(lm.get("text"), lm.get("attachments"))
         sender_id = str(lm.get("sender_id") or lm.get("user_id") or "")
         if self._me_id and sender_id == self._me_id:
             sender = "You"
         else:
             sender = (conv.get("other_user", {}) or {}).get("name", "")
-        if not text and lm.get("attachments"):
-            text = "📎 attachment"
         return sender, text
 
     def update_preview(self, sender: str, text: str):

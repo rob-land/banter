@@ -1,14 +1,17 @@
 """Banter — MessageBubble widget with inline reactions."""
 
 import re
+import urllib.request
 from datetime import datetime
+from pathlib import Path
 from gi.repository import Gtk, Adw, GLib, Gdk, Gio, Pango
 
 from ..constants import DEBUG, esc, EMOJI_LOG
 from ..async_utils import run_in_background
 from ..api import GroupMeAPI
-from ..helpers import set_avatar_from_url, set_pack_emoji
-from .misc import ImageAttachment, VideoAttachment, FileAttachment
+from ..constants import CACHE_DIR
+from ..helpers import set_avatar_from_url, set_pack_emoji, _cache_key
+from .misc import ImageAttachment, VideoAttachment, VoiceAttachment, FileAttachment
 from .event_card import EventCard
 from .poll_card import PollCard
 
@@ -273,6 +276,17 @@ class MessageBubble(Gtk.Box):
 
         text = (msg.get("text") or "").strip()
 
+        # Voice notes carry a server-injected downgrade warning in
+        # `text` ("⚠️You received a voice note. Please update to the
+        # latest version of GroupMe to view/respond.") meant for clients
+        # that don't render `audio` attachments. We do — so swallow the
+        # text entirely. Skipping any message that has an audio
+        # attachment is safer than substring-matching the warning,
+        # which gets translated by GroupMe and would silently break.
+        if any(a.get("type") == "audio"
+               for a in msg.get("attachments", [])):
+            text = ""
+
         # Pre-scan attachments for a pack-emoji entry; if present, the
         # text needs to render as an inline mix of labels and images
         # rather than a single Label.
@@ -337,6 +351,16 @@ class MessageBubble(Gtk.Box):
                     # for DMs), not the bubble's display gid.
                     bubble.append(FileAttachment(
                         fid, self._conversation_id(), api, window))
+            elif kind == "audio":
+                # Voice notes (Android/iOS "voice memo"). Hosted at
+                # m.groupme.com with a 24h-signed Azure CDN redirect;
+                # auth is via Cookie, not query string. See
+                # `api.download_audio`.
+                url = att.get("url", "")
+                if url:
+                    bubble.append(VoiceAttachment(
+                        url, att.get("duration"),
+                        att.get("peaks"), api, window))
             elif kind == "location":
                 loc = Gtk.Label(
                     label=f"📍 {att.get('name','Location')}"
@@ -990,6 +1014,27 @@ class MessageBubble(Gtk.Box):
             menu.append("Unpin", "bubble.unpin")
         else:
             menu.append("Pin", "bubble.pin")
+        # Save attachment items — surfaced only when the bubble carries
+        # one of these. The bubble's right-click gesture is in CAPTURE
+        # phase so it pre-empts the per-attachment-widget menus
+        # (VideoAttachment / VoiceAttachment) — those still work in
+        # contexts that don't sit inside a MessageBubble (the album
+        # gallery), but inside a chat the bubble menu is the single
+        # entry point.
+        atts = self.msg.get("attachments") or []
+        if any(a.get("type") == "image" for a in atts):
+            menu.append("Save Photo…",         "bubble.save-photo")
+        if any(a.get("type") == "video" for a in atts):
+            menu.append("Save Video…",         "bubble.save-video")
+        if any(a.get("type") == "audio" for a in atts):
+            menu.append("Save Voice Message…", "bubble.save-voice")
+        # `file` covers anything uploaded via the file picker — docs,
+        # video files, archives, etc. Banter's own outgoing video
+        # attachments land here too (only camera-shared videos use
+        # type:"video"), so this is the path users hit when right-
+        # clicking an mp4 they sent or received.
+        if any(a.get("type") == "file" for a in atts):
+            menu.append("Save Attachment…",    "bubble.save-file")
         if self.is_mine:
             if self.EDIT_ENABLED:
                 created = int(self.msg.get("created_at") or 0)
@@ -1001,12 +1046,16 @@ class MessageBubble(Gtk.Box):
         # Action group scoped to this bubble.
         group = Gio.SimpleActionGroup()
         for name, cb in (
-            ("reply",  self._action_reply),
-            ("copy",   self._action_copy),
-            ("pin",    self._action_pin),
-            ("unpin",  self._action_unpin),
-            ("edit",   self._action_edit),
-            ("delete", self._action_delete),
+            ("reply",      self._action_reply),
+            ("copy",       self._action_copy),
+            ("pin",        self._action_pin),
+            ("unpin",      self._action_unpin),
+            ("edit",       self._action_edit),
+            ("delete",     self._action_delete),
+            ("save-photo", self._action_save_photo),
+            ("save-video", self._action_save_video),
+            ("save-voice", self._action_save_voice),
+            ("save-file",  self._action_save_file),
         ):
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", cb)
@@ -1145,6 +1194,189 @@ class MessageBubble(Gtk.Box):
                     pass
 
         run_in_background(worker, on_done)
+
+    # ── Save attachment actions ────────────────────────────────────
+    def _first_attachment_url(self, kind: str) -> str:
+        """Return the `url` field of the first attachment of `kind`,
+        or '' if the bubble has no such attachment. Used by the
+        save-photo / save-video / save-voice menu actions to pick
+        the attachment to download."""
+        for a in (self.msg.get("attachments") or []):
+            if a.get("type") == kind:
+                return a.get("url") or ""
+        return ""
+
+    @staticmethod
+    def _ext_from_url(url: str, fallback: str) -> str:
+        """Best-effort file extension from the path component of `url`.
+        Returns `fallback` (with leading dot, e.g. '.m4a') when the URL
+        has no usable suffix or one that looks implausible after
+        stripping the query string."""
+        try:
+            path = url.split("?", 1)[0]
+            dot   = path.rfind(".")
+            slash = path.rfind("/")
+            if dot > slash >= 0 and dot < len(path) - 1:
+                ext = path[dot:]
+                if len(ext) <= 6 and ext[1:].isalnum():
+                    return ext
+        except Exception:
+            pass
+        return fallback
+
+    def _action_save_photo(self, *_):
+        url = self._first_attachment_url("image")
+        if not url:
+            return
+        ext = self._ext_from_url(url, ".jpg")
+        self._save_url_via_dialog(
+            url, f"groupme-photo{ext}", "Save Photo",
+            authed=False, downloading_msg="Downloading photo…")
+
+    def _action_save_video(self, *_):
+        url = self._first_attachment_url("video")
+        if not url:
+            return
+        ext = self._ext_from_url(url, ".mp4")
+        self._save_url_via_dialog(
+            url, f"groupme-video{ext}", "Save Video",
+            authed=False, downloading_msg="Downloading video…")
+
+    def _action_save_file(self, *_):
+        """Save a `type:"file"` attachment — anything uploaded via the
+        file picker (docs, video files, archives). Unlike photo/video
+        which carry a public URL on the attachment, files require
+        `api.download_file(cid, file_id, dest)` and the original
+        filename comes from a separate `get_file_data` lookup."""
+        fid = ""
+        for a in (self.msg.get("attachments") or []):
+            if a.get("type") == "file":
+                fid = a.get("file_id") or ""
+                break
+        if not fid:
+            return
+        cid = self._conversation_id()
+        api = self.api
+        win = self.win
+        if win is None:
+            return
+        try: win.toast("Preparing download…")
+        except Exception: pass
+
+        def fetch_meta():
+            data = api.get_file_data(cid, [fid])
+            meta = data.get(fid) or {}
+            GLib.idle_add(self._show_save_file_dialog, cid, fid, meta)
+
+        run_in_background(fetch_meta)
+
+    def _show_save_file_dialog(self, cid: str, fid: str, meta: dict):
+        win  = self.win
+        api  = self.api
+        name = meta.get("file_name") or f"groupme-file-{fid}"
+        fd = Gtk.FileDialog()
+        fd.set_title("Save Attachment")
+        fd.set_initial_name(name)
+
+        def on_chosen(fd, result):
+            try:
+                f    = fd.save_finish(result)
+                dest = f.get_path()
+            except GLib.Error:
+                return   # user cancelled
+            try: win.toast(f"Downloading {name}…")
+            except Exception: pass
+
+            def worker():
+                ok = api.download_file(cid, fid, dest)
+                def report():
+                    try:
+                        win.toast(
+                            f"Saved to {dest}" if ok else "Save failed")
+                    except Exception:
+                        pass
+                GLib.idle_add(report)
+
+            run_in_background(worker)
+
+        fd.save(win, None, on_chosen)
+
+    def _action_save_voice(self, *_):
+        url = self._first_attachment_url("audio")
+        if not url:
+            return
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        # Reuse the cached copy from playback if it's already on disk
+        # — saves a round-trip and works offline.
+        cached = ""
+        try:
+            p = CACHE_DIR / f"{_cache_key(url)}.audio"
+            if p.exists():
+                cached = str(p)
+        except Exception:
+            cached = ""
+        self._save_url_via_dialog(
+            url, f"groupme-voice-{stamp}.m4a", "Save Voice Message",
+            authed=True, downloading_msg="Downloading voice message…",
+            cached_path=cached)
+
+    def _save_url_via_dialog(self, url: str, default_name: str,
+                              title: str, authed: bool,
+                              downloading_msg: str,
+                              cached_path: str = ""):
+        """Show a save-file dialog and stream `url` to the chosen path
+        in a worker thread.
+
+        `authed=True` routes through `api.download_audio` which sends
+        the m.groupme.com Cookie token. Photo and video URLs are
+        public so they go through plain `urlretrieve`. `cached_path`,
+        when present, short-circuits the download with a local copy."""
+        win = self.win
+        if win is None or not url:
+            return
+        fd = Gtk.FileDialog()
+        fd.set_title(title)
+        fd.set_initial_name(default_name)
+
+        api = self.api
+        def on_chosen(fd, result):
+            try:
+                f    = fd.save_finish(result)
+                dest = f.get_path()
+            except GLib.Error:
+                return   # user cancelled
+            try: win.toast(downloading_msg)
+            except Exception: pass
+
+            def worker():
+                ok = False
+                if cached_path:
+                    try:
+                        import shutil
+                        shutil.copy(cached_path, dest)
+                        ok = True
+                    except Exception:
+                        ok = False
+                if not ok:
+                    if authed:
+                        ok = api.download_audio(url, dest)
+                    else:
+                        try:
+                            urllib.request.urlretrieve(url, dest)
+                            ok = True
+                        except Exception:
+                            ok = False
+                def report():
+                    try:
+                        win.toast(
+                            f"Saved to {dest}" if ok else "Save failed")
+                    except Exception:
+                        pass
+                GLib.idle_add(report)
+
+            run_in_background(worker)
+
+        fd.save(win, None, on_chosen)
 
     def _conversation_id(self) -> str:
         """Compute the API conversation_id for edit/delete. For groups
