@@ -4,7 +4,7 @@ import hashlib
 import threading
 import urllib.request
 
-from gi.repository import Gtk, Adw, GLib, GdkPixbuf
+from gi.repository import Gtk, Adw, GLib, Gdk, GdkPixbuf
 
 from .constants import CACHE_DIR, APP_VERSION, dbg
 from .async_utils import run_in_background
@@ -163,15 +163,24 @@ def load_audio_async(api, url: str, callback):
 
 def set_avatar_from_url(avatar_widget: Adw.Avatar, url: str):
     if not url:
+        dbg("set_avatar: empty url, skipping")
         return
 
     def on_loaded(path):
-        if path:
-            try:
-                texture = Gdk.Texture.new_from_filename(path)
-                avatar_widget.set_custom_image(texture)
-            except Exception:
-                pass
+        if not path:
+            dbg("set_avatar: no path for %s (cache miss + fetch failed)", url)
+            return
+        try:
+            texture = Gdk.Texture.new_from_filename(path)
+        except Exception as e:
+            # Log instead of silent swallow — old GroupMe URLs sometimes
+            # serve content that GdkPixbuf doesn't recognise.
+            dbg("set_avatar: texture load failed for %s: %s", path, e)
+            return
+        try:
+            avatar_widget.set_custom_image(texture)
+        except Exception as e:
+            dbg("set_avatar: set_custom_image failed for %s: %s", path, e)
 
     load_image_async(url, on_loaded)
 

@@ -14,6 +14,14 @@ and haven't been touched yet. Loose priority order, top = most useful.
   existing message bubble. Common GroupMe action.
 - **Edit My Profile** UI — `api.update_me` exists; no entry point
   exposes it.
+- **Full group administration dialog** — `GroupSettingsDialog`
+  covers name/description/mute/delete/leave today, but a richer
+  admin surface would include: promote/demote co-owners (using
+  `change_owners`), kick members from the settings dialog (today
+  it's only on the members list), per-member role display, and
+  group-policy toggles (who-can-add-members, posting permission).
+  Expand `GroupSettingsDialog` rather than building a parallel
+  dialog.
 - **Add to album from message bubbles** — Banter's "Add to Album"
   flow lives in the gallery (multi-select). Right-clicking an image
   in a regular chat bubble could surface the same picker for a single

@@ -60,6 +60,7 @@ dialog_sources = files(
   'dialogs/jump_to_date.py',
   'dialogs/members.py',
   'dialogs/pinned.py',
+  'dialogs/profile.py',
   'dialogs/settings.py',
 )
 

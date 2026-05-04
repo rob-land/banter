@@ -23,6 +23,7 @@ from .dialogs.settings import GroupSettingsDialog
 from .dialogs.gallery import GalleryDialog
 from .dialogs.events import CreateEventDialog, EventsListDialog, CreatePollDialog
 from .dialogs.pinned import PinnedDialog
+from .dialogs.profile import EditProfileDialog
 from .dialogs.jump_to_date import JumpToDateDialog
 
 
@@ -1529,9 +1530,31 @@ class BanterWindow(Adw.ApplicationWindow):
         mar_act.connect("activate", self._on_mark_all_read)
         self.add_action(mar_act)
 
+        # Edit My Profile dialog.
+        ep_act = Gio.SimpleAction.new("edit-profile", None)
+        ep_act.connect("activate", self._on_edit_profile)
+        self.add_action(ep_act)
+
     def _on_find(self, *_):
         if self._chat_view is not None:
             self._chat_view.toggle_search()
+
+    def _on_edit_profile(self, *_):
+        if self._api is None:
+            return
+        EditProfileDialog(
+            self._api, self,
+            on_saved=self._on_profile_saved).present(self)
+
+    def _on_profile_saved(self, user: dict):
+        """After a successful profile save, refresh `_current_user`
+        so name/avatar changes propagate to anywhere that reads it
+        (account-button tooltip, the my_name self-echo filter, etc.).
+        Existing UI rendered before this point isn't repainted —
+        most things just rebuild on next chat-open or sidebar refresh,
+        which is acceptable for a self-edit."""
+        if isinstance(user, dict):
+            self._current_user = user
 
     def _on_mark_all_read(self, *_):
         """Iterate every row with unread > 0 and POST a per-conversation
