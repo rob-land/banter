@@ -10,17 +10,10 @@ and haven't been touched yet. Loose priority order, top = most useful.
 - **GIF picker** in the compose bar (Tenor or Giphy). GroupMe accepts
   image attachments by URL, so any web GIF works once we have a
   picker UI. Tenor has a free tier with a Google Cloud key.
-- **Read receipts.** Endpoints captured 2026-05-03:
-  `POST /v3/conversations/{cid}/{mid}/read_receipt` (per-message) and
-  `POST /v3/conversations/{cid}/read_receipt` (per-conversation). Wire
-  these into ChatView's scroll-to-bottom and bubble-visible events,
-  then surface received-state in message bubbles.
 - **Forward message** — pick a destination conversation for an
   existing message bubble. Common GroupMe action.
 - **Edit My Profile** UI — `api.update_me` exists; no entry point
   exposes it.
-- **Mark all read** / per-conversation mark-read. Now unblocked since
-  the read-receipt endpoint is known.
 - **Add to album from message bubbles** — Banter's "Add to Album"
   flow lives in the gallery (multi-select). Right-clicking an image
   in a regular chat bubble could surface the same picker for a single
@@ -74,6 +67,13 @@ and haven't been touched yet. Loose priority order, top = most useful.
 - ~~Album creation, browsing, multi-select add~~ — `AlbumCreatorDialog`,
   `AlbumViewDialog`, `AlbumPickerDialog`; gallery has a Select
   toggle for multi-pick across both images and videos
+- ~~Read receipts~~ — Banter sends a per-conversation `read_receipt`
+  on chat open / new message at bottom / scroll-back-to-bottom; own
+  DM bubbles show a ✓ Read indicator once the other user's
+  `read_receipt.message_id` advances past them; sidebar unread
+  badges sync from `unread_count` / `last_read_message_id` and a
+  "Mark All Read" item lives in the primary menu. Groups don't
+  expose per-member receipts so group bubbles stay unmarked
 - ~~Start / Join Call~~ (browser-launch) — call button in chat headers
   hits `GET /v3/conversations/{cid}/call` and opens the returned
   Teams meeting URL via the system browser. **WIP / partially broken:**
