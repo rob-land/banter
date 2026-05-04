@@ -226,9 +226,15 @@ class GroupMeAPI:
 
     # ── groups ──
     def get_groups(self, page=1, per_page=20, omit="memberships"):
+        # `include=unread_count` is what gets the server to return a
+        # real integer for `messages.unread_count` / `last_read_*`
+        # fields. Without it the values come back as None — the web
+        # client always sends this, and the sidebar unread badge is
+        # broken without it.
         r = self._req("GET", "/groups",
                       params={"page": page, "per_page": per_page,
-                               "omit": omit})
+                               "omit": omit,
+                               "include": "unread_count"})
         return r.get("response", [])
 
     def get_groups_all(self):
@@ -473,9 +479,13 @@ class GroupMeAPI:
 
     # ── direct messages ──
     def get_chats(self, page=1, per_page=20):
-        """Return list of DM conversations (chats)."""
+        """Return list of DM conversations (chats).
+
+        Always asks for `include=unread_count` — see `get_groups` for
+        why (without it the server returns None for the read fields)."""
         r = self._req("GET", "/chats",
-                      params={"page": page, "per_page": per_page})
+                      params={"page": page, "per_page": per_page,
+                              "include": "unread_count"})
         return r.get("response", [])
 
     def get_chats_all(self):

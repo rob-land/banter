@@ -1175,6 +1175,32 @@ class BanterWindow(Adw.ApplicationWindow):
                 other_name, preview_text or "📎 attachment",
                 tag=f"dm-{other_id}")
 
+        # Sync each row's badge to the server's authoritative unread
+        # count. Push events drive `bump_unread()` for instant feedback;
+        # this pass corrects drift from other clients (a sibling phone
+        # opening the chat clears unread there, and we want our count
+        # to follow). Skipped for the currently-open conv — opening a
+        # chat fires a read_receipt but the server may not have
+        # processed it by the time this poll's response was built, so
+        # we'd briefly re-display a stale count. The chat-open flow
+        # already zeroes the row.
+        for g in groups:
+            gid = str(g["id"])
+            row = self._rows.get(self._conv_key("group", gid))
+            if row is None or self._is_conv_open("group", gid):
+                continue
+            sc = (g.get("messages") or {}).get("unread_count")
+            if sc is not None:
+                row.set_unread(int(sc))
+        for chat in chats:
+            other_id = str(chat.get("other_user", {}).get("id", ""))
+            row = self._rows.get(self._conv_key("dm", other_id))
+            if row is None or self._is_conv_open("dm", other_id):
+                continue
+            sc = chat.get("unread_count")
+            if sc is not None:
+                row.set_unread(int(sc))
+
         # Tab attention dot reflects persistent unread state, not just
         # "any new this poll" — derive from the per-row counters that
         # bump_unread / set_unread maintain.
@@ -1498,9 +1524,64 @@ class BanterWindow(Adw.ApplicationWindow):
         self.add_action(find_act)
         app.set_accels_for_action("win.find", ["<Control>f"])
 
+        # Mark every conv with unread > 0 as read in one shot.
+        mar_act = Gio.SimpleAction.new("mark-all-read", None)
+        mar_act.connect("activate", self._on_mark_all_read)
+        self.add_action(mar_act)
+
     def _on_find(self, *_):
         if self._chat_view is not None:
             self._chat_view.toggle_search()
+
+    def _on_mark_all_read(self, *_):
+        """Iterate every row with unread > 0 and POST a per-conversation
+        read_receipt for it. We optimistically zero the badge first
+        (good UX even if a request fails — the next bg_poll will
+        correct any rows whose POST failed) and fan the requests out
+        in a single worker thread."""
+        if self._api is None:
+            return
+        targets: list = []   # list of (cid, row)
+        for key, row in self._rows.items():
+            if getattr(row, "_unread_count_n", 0) <= 0:
+                continue
+            conv_type, conv_id = key
+            if conv_type == "group":
+                cid = str(conv_id)
+            else:
+                # DM — same <lo>+<hi> conversation_id used by the
+                # other receipt path.
+                me = str((self._current_user or {}).get("id", ""))
+                try:
+                    a, b = int(me), int(conv_id)
+                    lo, hi = (a, b) if a < b else (b, a)
+                    cid = f"{lo}+{hi}"
+                except (TypeError, ValueError):
+                    cid = f"{me}+{conv_id}"
+            targets.append((cid, row))
+
+        if not targets:
+            self.toast("No unread conversations")
+            return
+
+        # Optimistically zero each badge — server-side ack will land
+        # within a tick, and the next bg_poll syncs anyway.
+        for _cid, row in targets:
+            try: row.set_unread(0)
+            except Exception: pass
+
+        api = self._api
+        cids = [cid for cid, _ in targets]
+
+        def worker():
+            for cid in cids:
+                try:
+                    api.read_receipt(cid)
+                except Exception as e:
+                    dbg("mark-all-read: receipt for %s failed: %s", cid, e)
+
+        run_in_background(worker)
+        self.toast(f"Marked {len(targets)} read")
 
     def _sign_out(self, *_):
         self._stop_bg_poll()

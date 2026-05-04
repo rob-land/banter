@@ -173,6 +173,11 @@ template $BanterWindow: Adw.ApplicationWindow {
 
 menu primary_menu {
   item {
+    label: _("Mark All Read");
+    action: "win.mark-all-read";
+  }
+
+  item {
     label: _("Keyboard Shortcuts");
     action: "app.shortcuts";
   }
