@@ -13,7 +13,7 @@ from gi.repository import Gtk, Adw, Gdk, Gio, GLib
 from .config import Config
 from .constants import APP_ID, APP_NAME, APP_VERSION, DEBUG, CONFIG_DIR, CACHE_DIR, dbg, log
 from .css import APP_CSS
-from .window import MainWindow
+from .window import BanterWindow
 
 
 SHORTCUTS_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -94,7 +94,7 @@ class BanterApplication(Adw.Application):
         self._load_css()
         self._register_bundled_icons()
         if not self._window:
-            self._window = MainWindow(self)
+            self._window = BanterWindow(self)
         self._window.present()
 
     def _register_bundled_icons(self):

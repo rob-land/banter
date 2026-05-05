@@ -30,7 +30,7 @@ src/
 ├── oauth.py            OAuth sign-in dialog + local callback server; BANTER_CLIENT_ID lives here
 ├── push.py             WebSocket push client (Bayeux/Faye protocol)
 ├── secrets.py          libsecret token storage
-├── window.py           MainWindow — sidebar + content split, primary menu, call launcher
+├── window.py           BanterWindow — sidebar + content split, primary menu, call launcher
 ├── widgets/
 │   ├── base.py             StandardDialog base for Adw.Dialogs
 │   ├── chat_view.py        Message list, compose bar, voice-message recording

@@ -258,7 +258,7 @@ class PollCard(Gtk.Box):
 
     # ── Live push update ──────────────────────────────────────────────
     def apply_push_update(self, poll_data: dict):
-        """Called by MainWindow when a poll.vote push event lands for
+        """Called by BanterWindow when a poll.vote push event lands for
         our poll_id. The push payload is the full poll snapshot — same
         shape as get_poll's response — so we replace _poll and re-
         render. _voted_ids is preserved (push doesn't carry per-voter

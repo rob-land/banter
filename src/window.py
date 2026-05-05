@@ -1,4 +1,4 @@
-"""Banter — MainWindow: the application's primary window."""
+"""Banter — BanterWindow: the application's primary window."""
 
 import time
 import gi
@@ -30,7 +30,7 @@ from .dialogs.pinned import PinnedDialog
 from .dialogs.jump_to_date import JumpToDateDialog
 
 
-class MainWindow(Adw.ApplicationWindow):
+class BanterWindow(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
         self._config       = Config()
@@ -458,7 +458,7 @@ class MainWindow(Adw.ApplicationWindow):
             on_error=lambda m: dbg("push error: %s", m),
         )
         self._push.start()
-        dbg("MainWindow: push client started for user %s", user_id)
+        dbg("BanterWindow: push client started for user %s", user_id)
 
     def _stop_push(self):
         if self._push:

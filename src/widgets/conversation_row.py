@@ -132,7 +132,7 @@ class ConversationRow(Adw.ActionRow):
             self.set_muted(self._config.is_muted(self._mute_key()))
 
     def _mute_key(self) -> str:
-        """Mirror MainWindow._mute_key — keep the formats in sync."""
+        """Mirror BanterWindow._mute_key — keep the formats in sync."""
         cid = (str(self.conv.get("other_user", {}).get("id", ""))
                if self.conv_type == "dm"
                else str(self.conv.get("id", "")))

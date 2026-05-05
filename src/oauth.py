@@ -208,7 +208,7 @@ class LoginDialog(Adw.Dialog):
             self._on_oauth_error(f"Could not open browser: {e}")
 
     def receive_token(self, token: str):
-        """Called by MainWindow.deliver_oauth_token() when the OS delivers
+        """Called by BanterWindow.deliver_oauth_token() when the OS delivers
         the banter:// URI scheme redirect (mobile fallback path)."""
         dbg("LoginDialog: token received via URI scheme")
         if self._server:

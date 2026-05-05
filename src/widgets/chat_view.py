@@ -39,7 +39,7 @@ class ChatView(Gtk.Box):
         self._is_dm        = is_dm
         self._config       = config
         # Conversation key used by the parent window to look up our
-        # draft text. Uses the same key shape as MainWindow._rows.
+        # draft text. Uses the same key shape as BanterWindow._rows.
         self._draft_key    = (
             "dm" if is_dm else "group",
             str(other_user_id) if (is_dm and other_user_id) else self._gid,
@@ -392,7 +392,7 @@ class ChatView(Gtk.Box):
 
     # ── Lifecycle ──
     def stop(self):
-        """Stop fallback DM poll timer (push lives in MainWindow)."""
+        """Stop fallback DM poll timer (push lives in BanterWindow)."""
         # Persist any in-progress compose text into the parent window's
         # draft store so it's restored next time this conversation is
         # opened. We always write — including the empty string — so a
@@ -426,14 +426,14 @@ class ChatView(Gtk.Box):
             self._mention_anchor = None
 
     def _start_polling(self):
-        """Groups use the MainWindow-level push client.
+        """Groups use the BanterWindow-level push client.
         DMs fall back to periodic polling since push events don't
         reliably include DM group IDs."""
         if self._is_dm:
             dbg("ChatView: using polling fallback (DM)")
             self._poll_id = GLib.timeout_add(self._poll_ms, self._poll)
         else:
-            dbg("ChatView: push handled by MainWindow singleton")
+            dbg("ChatView: push handled by BanterWindow singleton")
 
     def _on_push_event(self, data: dict):
         """Handle a push event received from GroupMe's Faye server."""
@@ -1371,7 +1371,7 @@ class ChatView(Gtk.Box):
 
     # ── In-conversation search ──
     def toggle_search(self):
-        """Show/hide the chat search bar. Called by MainWindow's
+        """Show/hide the chat search bar. Called by BanterWindow's
         Ctrl+F action."""
         new_state = not self._search_bar.get_search_mode()
         self._search_bar.set_search_mode(new_state)
