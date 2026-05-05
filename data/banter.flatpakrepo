@@ -1,0 +1,7 @@
+[Flatpak Repo]
+Title=Banter Test Builds
+Url=https://robland.codeberg.page/banter/
+Homepage=https://codeberg.org/robland/banter
+Comment=Pre-release test builds of Banter
+Description=Test builds of Banter, a native GNOME client for GroupMe. Updates land here before they go to Flathub.
+Icon=https://codeberg.org/robland/banter/raw/branch/main/data/icons/hicolor/scalable/apps/land.rob.Banter.svg
