@@ -1,5 +1,6 @@
 # Build artifacts
 _build/
+_install/
 _flatpak/
 _flatpak_aarch64/
 _flatpak_x86_64/
@@ -10,6 +11,9 @@ repo/
 # Generated files
 build-aux/flatpak/python3-deps.json
 src/const.py
+
+# Blueprint output (compiled from data/ui/*.blp at build time)
+data/ui/*.ui
 
 # Python
 __pycache__/

@@ -2,42 +2,29 @@
 conversation back to."""
 
 from datetime import date as _date, datetime
-from gi.repository import Gtk, Adw, GLib
-
-from ..widgets.base import StandardDialog
+from gi.repository import Gtk, Adw
 
 
-class JumpToDateDialog(StandardDialog):
+@Gtk.Template(resource_path="/land/rob/Banter/ui/jump-to-date-dialog.ui")
+class JumpToDateDialog(Adw.Dialog):
+    __gtype_name__ = "JumpToDateDialog"
+
+    calendar:      Gtk.Calendar = Gtk.Template.Child()
+    cancel_button: Gtk.Button   = Gtk.Template.Child()
+    jump_button:   Gtk.Button   = Gtk.Template.Child()
+
     def __init__(self, parent_window):
-        super().__init__(title="Jump to date", width=340, height=-1)
+        super().__init__()
         self._parent = parent_window
 
-        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        body.set_margin_top(12)
-        body.set_margin_bottom(12)
-        body.set_margin_start(12)
-        body.set_margin_end(12)
+    @Gtk.Template.Callback()
+    def on_cancel_clicked(self, _btn):
+        self.close()
 
-        self._cal = Gtk.Calendar()
-        body.append(self._cal)
-
-        btn_box = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        btn_box.append(cancel)
-        jump = Gtk.Button(label="Jump")
-        jump.add_css_class("suggested-action")
-        jump.connect("clicked", self._on_jump)
-        btn_box.append(jump)
-        body.append(btn_box)
-
-        self.set_body(body)
-
-    def _on_jump(self, *_):
-        gd = self._cal.get_date()  # GLib.DateTime
-        target = _date(gd.get_year(),
-                       gd.get_month(),
-                       gd.get_day_of_month())
+    @Gtk.Template.Callback()
+    def on_jump_clicked(self, _btn):
+        gd = self.calendar.get_date()  # GLib.DateTime
+        target = _date(gd.get_year(), gd.get_month(), gd.get_day_of_month())
         # Clamp future picks to today — paging back from the future is
         # nonsensical and would spin until the batch limit hits.
         today = datetime.now().date()

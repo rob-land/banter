@@ -28,7 +28,6 @@ banter_sources = files(
   'async_utils.py',
   'config.py',
   'constants.py',
-  'css.py',
   'helpers.py',
   'main.py',
   'mock_api.py',

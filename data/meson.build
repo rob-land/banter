@@ -48,3 +48,8 @@ install_data(
   'icons/hicolor/scalable/actions/banter-notifications-active-symbolic.svg',
   install_dir: datadir / 'icons' / 'hicolor' / 'scalable' / 'actions',
 )
+
+# UI templates (.blp -> .ui) + CSS bundled into a GResource at
+# share/banter/land.rob.Banter.gresource. The launcher loads it before
+# any @Gtk.Template-decorated class is imported.
+subdir('ui')

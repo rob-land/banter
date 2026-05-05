@@ -1,0 +1,40 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $JumpToDateDialog: Adw.Dialog {
+  title: _("Jump to date");
+  content-width: 340;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {}
+
+    content: Box {
+      orientation: vertical;
+      spacing: 12;
+      margin-top: 12;
+      margin-bottom: 12;
+      margin-start: 12;
+      margin-end: 12;
+
+      Calendar calendar {}
+
+      Box {
+        spacing: 8;
+        halign: end;
+
+        Button cancel_button {
+          label: _("Cancel");
+          clicked => $on_cancel_clicked();
+        }
+
+        Button jump_button {
+          label: _("Jump");
+          clicked => $on_jump_clicked();
+
+          styles ["suggested-action"]
+        }
+      }
+    };
+  };
+}

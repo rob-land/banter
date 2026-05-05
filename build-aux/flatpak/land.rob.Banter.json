@@ -28,6 +28,18 @@
 
   "modules": [
     {
+      "name": "blueprint-compiler",
+      "buildsystem": "meson",
+      "cleanup": ["*"],
+      "sources": [
+        {
+          "type": "git",
+          "url": "https://gitlab.gnome.org/jwestman/blueprint-compiler.git",
+          "tag": "v0.16.0"
+        }
+      ]
+    },
+    {
       "name": "banter",
       "buildsystem": "meson",
       "config-opts": [],

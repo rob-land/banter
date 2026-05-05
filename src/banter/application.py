@@ -3,56 +3,12 @@
 import sys
 import urllib.parse
 from pathlib import Path
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-gi.require_version('Gdk', '4.0')
-gi.require_version('GdkPixbuf', '2.0')
-gi.require_version('Gst', '1.0')
+
 from gi.repository import Gtk, Adw, Gdk, Gio, GLib
 
 from .config import Config
 from .constants import APP_ID, APP_NAME, APP_VERSION, DEBUG, CONFIG_DIR, CACHE_DIR, dbg, log
-from .css import APP_CSS
 from .window import BanterWindow
-
-
-SHORTCUTS_XML = """<?xml version="1.0" encoding="UTF-8"?>
-<interface>
-  <object class="GtkShortcutsWindow" id="shortcuts_window">
-    <property name="modal">true</property>
-    <child>
-      <object class="GtkShortcutsSection">
-        <property name="visible">true</property>
-        <property name="section-name">main</property>
-        <child>
-          <object class="GtkShortcutsGroup">
-            <property name="title">General</property>
-            <child>
-              <object class="GtkShortcutsShortcut">
-                <property name="accelerator">&lt;ctrl&gt;f</property>
-                <property name="title">Search the current chat</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkShortcutsShortcut">
-                <property name="accelerator">&lt;ctrl&gt;question</property>
-                <property name="title">Show keyboard shortcuts</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkShortcutsShortcut">
-                <property name="accelerator">&lt;ctrl&gt;q</property>
-                <property name="title">Quit</property>
-              </object>
-            </child>
-          </object>
-        </child>
-      </object>
-    </child>
-  </object>
-</interface>
-"""
 
 
 class BanterApplication(Adw.Application):
@@ -146,7 +102,7 @@ class BanterApplication(Adw.Application):
 
     def _load_css(self):
         css = Gtk.CssProvider()
-        css.load_from_string(APP_CSS)
+        css.load_from_resource('/land/rob/Banter/ui/style.css')
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(),
             css,
@@ -171,8 +127,8 @@ class BanterApplication(Adw.Application):
         about.present(self._window)
 
     def _show_shortcuts(self, *_):
-        builder = Gtk.Builder.new_from_string(SHORTCUTS_XML, -1)
-        win = builder.get_object("shortcuts_window")
+        builder = Gtk.Builder.new_from_resource('/land/rob/Banter/ui/help-overlay.ui')
+        win = builder.get_object("help_overlay")
         if self._window:
             win.set_transient_for(self._window)
         win.present()

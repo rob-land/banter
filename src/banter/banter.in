@@ -8,6 +8,17 @@ moduledir  = '@moduledir@'
 
 sys.path.insert(1, pkgdatadir)
 
+import gi
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+gi.require_version('Gdk', '4.0')
+gi.require_version('GdkPixbuf', '2.0')
+gi.require_version('Gst', '1.0')
+from gi.repository import Gio
+
+resource_path = os.path.join(pkgdatadir, 'land.rob.Banter.gresource')
+Gio.Resource.load(resource_path)._register()
+
 if __name__ == '__main__':
     from banter.application import main
     sys.exit(main())
