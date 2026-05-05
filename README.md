@@ -133,7 +133,7 @@ flatpak install flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
 ```bash
 flatpak-builder --install --user --force-clean \
-  _flatpak land.rob.Banter.json
+  _flatpak build-aux/flatpak/land.rob.Banter.json
 
 flatpak run land.rob.Banter
 ```
@@ -167,7 +167,7 @@ flatpak install flathub --arch=aarch64 \
 
 ```bash
 flatpak-builder --arch=aarch64 --install --user --force-clean \
-  _flatpak-aarch64 land.rob.Banter.json
+  _flatpak-aarch64 build-aux/flatpak/land.rob.Banter.json
 ```
 
 ### Export a redistributable bundle
@@ -175,7 +175,7 @@ flatpak-builder --arch=aarch64 --install --user --force-clean \
 ```bash
 # Build into a local repo
 flatpak-builder --arch=aarch64 --repo=repo --force-clean \
-  _flatpak-aarch64 land.rob.Banter.json
+  _flatpak-aarch64 build-aux/flatpak/land.rob.Banter.json
 
 # Export a single-file bundle you can sideload onto the device
 flatpak build-bundle repo --arch=aarch64 \
@@ -222,7 +222,7 @@ Inside a Flatpak build, add it to the manifest as a pip module.
 ```
 banter/
 ├── meson.build                  Root build file
-├── land.rob.Banter.json         Flatpak manifest
+├── build-aux/flatpak/land.rob.Banter.json         Flatpak manifest
 ├── data/
 │   ├── land.rob.Banter.desktop.in
 │   ├── land.rob.Banter.appdata.xml.in

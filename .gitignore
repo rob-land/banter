@@ -8,7 +8,7 @@ repo/
 *.flatpak
 
 # Generated files
-python3-deps.json
+build-aux/flatpak/python3-deps.json
 src/const.py
 
 # Python

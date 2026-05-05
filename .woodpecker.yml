@@ -17,7 +17,7 @@ steps:
       - flatpak install -y --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
 
       # Build into local OSTree repo and prune old commits
-      - flatpak-builder --user --repo=repo --force-clean _build land.rob.Banter.json
+      - flatpak-builder --user --repo=repo --force-clean _build build-aux/flatpak/land.rob.Banter.json
       - flatpak build-update-repo --prune --prune-depth=10 repo
 
       # SSH key for pushing to the pages branch

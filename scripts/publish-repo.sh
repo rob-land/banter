@@ -19,10 +19,10 @@ cd "$ROOT"
 LABEL="${1:-$(git describe --tags --always --dirty)}"
 
 echo ">> Building Flatpak (x86_64)"
-flatpak-builder --user --repo=repo --force-clean _build land.rob.Banter.json
+flatpak-builder --user --repo=repo --force-clean _build build-aux/flatpak/land.rob.Banter.json
 
 # Uncomment to also build aarch64 (requires qemu-user-static + binfmt registration):
-# flatpak-builder --user --arch=aarch64 --repo=repo --force-clean _build-aarch64 land.rob.Banter.json
+# flatpak-builder --user --arch=aarch64 --repo=repo --force-clean _build-aarch64 build-aux/flatpak/land.rob.Banter.json
 
 echo ">> Updating OSTree repo summary + pruning"
 flatpak build-update-repo --prune --prune-depth=10 repo
