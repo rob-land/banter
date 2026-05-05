@@ -1,7 +1,8 @@
 # Build artifacts
 _build/
 _flatpak/
-_flatpak-aarch64/
+_flatpak_aarch64/
+_flatpak_x86_64/
 _pages/
 repo/
 *.flatpak
