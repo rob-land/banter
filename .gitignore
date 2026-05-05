@@ -34,3 +34,7 @@ debug.log
 Screenshot*
 *.flatpak-builder.log
 *.har
+
+# Claude Code workspace — track shared settings, ignore everything else
+.claude/*
+!.claude/settings.json
