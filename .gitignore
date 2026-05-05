@@ -11,9 +11,6 @@ repo/
 python3-deps.json
 src/const.py
 
-# Claude
-CLAUDE.md
-
 # Python
 __pycache__/
 *.py[cod]
