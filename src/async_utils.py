@@ -9,8 +9,6 @@ don't have to repeat the thread bookkeeping.
 
 import threading
 
-import gi
-gi.require_version('Gtk', '4.0')
 from gi.repository import GLib
 
 from .constants import log

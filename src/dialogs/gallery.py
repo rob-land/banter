@@ -2,11 +2,6 @@
 
 import shutil
 from datetime import datetime
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-gi.require_version('Gdk', '4.0')
-gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio, Gdk, GdkPixbuf, Pango
 
 from ..constants import esc, CACHE_DIR

@@ -27,10 +27,6 @@ Layout (top → bottom):
 Picking any emoji toggles / replaces the user's reaction on the message.
 """
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-gi.require_version('Gdk', '4.0')
 from gi.repository import Gtk, Adw, GLib
 
 from ..constants import DEFAULT_REACTIONS, esc

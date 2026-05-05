@@ -19,11 +19,6 @@ import threading
 import urllib.parse
 import http.server
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-gi.require_version('Gdk', '4.0')
-gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Adw, GLib, Gio
 
 from .constants import OAUTH_AUTHORIZE_URL, OAUTH_PORT, APP_NAME, dbg

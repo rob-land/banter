@@ -7,9 +7,6 @@ pieces explicit (callers can grab the inner Box and append rows) but
 removes the boilerplate.
 """
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw
 
 

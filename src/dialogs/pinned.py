@@ -7,9 +7,6 @@ Backed by the undocumented v3 endpoints captured from web.groupme.com:
 """
 
 from datetime import datetime
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib
 
 from ..constants import esc
