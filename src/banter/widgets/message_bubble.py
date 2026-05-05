@@ -1055,6 +1055,15 @@ class MessageBubble(Gtk.Box):
         # clicking an mp4 they sent or received.
         if any(a.get("type") == "file" for a in atts):
             menu.append("Save Attachment…",    "bubble.save-file")
+        # "Add to Album…" only makes sense in groups — Banter doesn't
+        # currently expose a DM gallery, and `api.get_albums` for a
+        # DM `<lo>+<hi>` conv_id is untested. Show the item only when
+        # the bubble has at least one image or video attachment AND
+        # we're in a group chat.
+        cv = getattr(self.win, "_chat_view", None)
+        in_group = bool(cv) and not getattr(cv, "_is_dm", False)
+        if in_group and any(a.get("type") in ("image", "video") for a in atts):
+            menu.append("Add to Album…",       "bubble.add-to-album")
         if self.is_mine:
             if self.EDIT_ENABLED:
                 created = int(self.msg.get("created_at") or 0)
@@ -1072,10 +1081,11 @@ class MessageBubble(Gtk.Box):
             ("unpin",      self._action_unpin),
             ("edit",       self._action_edit),
             ("delete",     self._action_delete),
-            ("save-photo", self._action_save_photo),
-            ("save-video", self._action_save_video),
-            ("save-voice", self._action_save_voice),
-            ("save-file",  self._action_save_file),
+            ("save-photo",     self._action_save_photo),
+            ("save-video",     self._action_save_video),
+            ("save-voice",     self._action_save_voice),
+            ("save-file",      self._action_save_file),
+            ("add-to-album",   self._action_add_to_album),
         ):
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", cb)
@@ -1290,6 +1300,41 @@ class MessageBubble(Gtk.Box):
         self._save_url_via_dialog(
             url, f"groupme-video{ext}", "Save Video",
             authed=False, downloading_msg="Downloading video…")
+
+    def _action_add_to_album(self, *_):
+        """Open the album picker pre-loaded with this message's image
+        and video attachments. Group-only — the menu predicate already
+        gates on this, but a defensive recheck here keeps the handler
+        safe if someone activates the action via keyboard / D-Bus."""
+        atts = self.msg.get("attachments") or []
+        media: list = []
+        for a in atts:
+            kind = a.get("type")
+            if kind not in ("image", "video"):
+                continue
+            url = a.get("url") or ""
+            if not url:
+                continue
+            media.append({
+                "media_url":    url,
+                "media_type":   kind,
+                "media_source": "album",
+            })
+        if not media:
+            return
+
+        cv = getattr(self.win, "_chat_view", None)
+        if cv is None or getattr(cv, "_is_dm", False):
+            return
+        group = getattr(cv, "_group", None)
+        if not isinstance(group, dict):
+            return
+
+        # Late import — gallery.py pulls in widgets and would
+        # circle back if imported at module-load time.
+        from ..dialogs.gallery import AlbumPickerDialog
+        AlbumPickerDialog(
+            self.api, group, media, self.win).present(self.win)
 
     def _action_save_file(self, *_):
         """Save a `type:"file"` attachment — anything uploaded via the

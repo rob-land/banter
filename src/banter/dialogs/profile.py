@@ -18,7 +18,7 @@ class EditProfileDialog(Adw.PreferencesDialog):
     values are POSTed, so a no-op Save is a single empty POST.
 
     `on_saved` is invoked with the fresh user dict after a
-    successful save so MainWindow can refresh `_current_user` and
+    successful save so BanterWindow can refresh `_current_user` and
     repaint the sidebar's account button tooltip.
     """
 
@@ -79,7 +79,7 @@ class EditProfileDialog(Adw.PreferencesDialog):
         page.add(info_grp)
 
         # Kick off the load. _users/me already populates the cache
-        # in MainWindow.start, but re-fetching keeps the form in
+        # in BanterWindow.start, but re-fetching keeps the form in
         # sync if other clients have edited the profile in the
         # meantime.
         self._load()

@@ -71,13 +71,24 @@ class AlbumCard(Gtk.Box):
         self._count_lbl.set_xalign(0)
         right.append(self._count_lbl)
 
-        # Open button
+        # Action row: Open + Add buttons side-by-side. Open is the
+        # primary affordance (canonical "view this album"), Add is
+        # the convenience shortcut so users don't have to open the
+        # album just to drop a photo in.
+        btn_row = Gtk.Box(spacing=6)
+        btn_row.set_margin_top(2)
+
         open_btn = Gtk.Button(label="Open Album")
         open_btn.add_css_class("pill")
-        open_btn.set_halign(Gtk.Align.START)
-        open_btn.set_margin_top(2)
         open_btn.connect("clicked", self._on_open_clicked)
-        right.append(open_btn)
+        btn_row.append(open_btn)
+
+        add_btn = Gtk.Button(label="Add Photo")
+        add_btn.add_css_class("pill")
+        add_btn.connect("clicked", self._on_add_clicked)
+        btn_row.append(add_btn)
+
+        right.append(btn_row)
 
         self.append(right)
 
@@ -159,3 +170,15 @@ class AlbumCard(Gtk.Box):
         }
         AlbumViewDialog(
             self.api, {"id": self.gid}, album, self.win).present(self.win)
+
+    # ── Add Photo → file picker → upload → album add ──────────
+    def _on_add_clicked(self, *_):
+        # Late import — same circular-import concern as _on_open_clicked.
+        from ..dialogs.gallery import add_local_image_to_album
+        album = self._album_full or {
+            "album_id": self._album_id,
+            "title":    self._album_title,
+        }
+        add_local_image_to_album(
+            self.api, self.gid, album, self.win,
+            on_done=self._fetch)

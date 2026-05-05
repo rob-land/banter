@@ -11,7 +11,14 @@ and haven't been touched yet. Loose priority order, top = most useful.
   image attachments by URL, so any web GIF works once we have a
   picker UI. Tenor has a free tier with a Google Cloud key.
 - **Forward message** — pick a destination conversation for an
-  existing message bubble. Common GroupMe action.
+  existing message bubble. Banter-specific feature (the official
+  GroupMe clients don't expose forwarding — they lean on copy-paste
+  and the OS share sheet instead). Easy for text + image attachments
+  (i.groupme.com URLs work cross-conv); harder for files (file_id
+  is conv-scoped, would need download + re-upload) and voice notes
+  (m.groupme.com URL might not auth in the destination's render
+  context). Scope an MVP to text + images and refuse the rest with
+  a toast if we revisit.
 - **Edit My Profile** UI — `api.update_me` exists; no entry point
   exposes it.
 - **Full group administration dialog** — `GroupSettingsDialog`

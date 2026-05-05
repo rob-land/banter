@@ -611,8 +611,20 @@ class AlbumViewDialog(StandardDialog):
         self._group  = group
         self._album  = album
         self._parent = parent
+        # Tracked so _load can clean up the empty-state placeholder
+        # when refreshing after the first photo is added.
+        self._empty_state = None
+
+        # "+" button in the header — picks a local image, uploads,
+        # adds, then re-loads the flow so the new tile appears.
+        add_btn = Gtk.Button(icon_name="list-add-symbolic")
+        add_btn.add_css_class("flat")
+        add_btn.set_tooltip_text("Add a photo to this album")
+        add_btn.connect("clicked", self._on_add_clicked)
+        self.add_header_widget(add_btn, end=True)
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self._outer = outer
 
         self._spinner = Gtk.Spinner(spinning=True, margin_top=40,
                                      halign=Gtk.Align.CENTER)
@@ -635,6 +647,30 @@ class AlbumViewDialog(StandardDialog):
         scroll.set_child(outer)
         self.set_body(scroll)
 
+        self._load()
+
+    def _on_add_clicked(self, *_):
+        add_local_image_to_album(
+            self._api, self._group["id"], self._album,
+            self._parent, on_done=self._refresh_after_add)
+
+    def _refresh_after_add(self):
+        """Clear the current tiles + empty state and re-fetch. Cheap
+        — the album has at most a few dozen items in practice."""
+        # Drop existing tiles
+        child = self._flow.get_first_child()
+        while child:
+            nxt = child.get_next_sibling()
+            self._flow.remove(child)
+            child = nxt
+        # Drop empty-state placeholder if it's there
+        if self._empty_state is not None:
+            try: self._outer.remove(self._empty_state)
+            except Exception: pass
+            self._empty_state = None
+        # Show the spinner again and re-fetch
+        self._spinner.set_visible(True)
+        self._spinner.set_spinning(True)
         self._load()
 
     def _load(self):
@@ -661,6 +697,7 @@ class AlbumViewDialog(StandardDialog):
             if parent_box:
                 parent_box.remove(self._spinner)
                 parent_box.prepend(empty)
+            self._empty_state = empty
             return
 
         for att in attachments:
@@ -879,6 +916,72 @@ class AlbumPickerDialog(StandardDialog):
         _add_media(self._api, self._group, album, self._media,
                    self._parent, self._on_done)
         self.close()
+
+
+def add_local_image_to_album(api, gid: str, album: dict,
+                              parent, on_done=None):
+    """Pick a local image, upload it, then attach it to `album`.
+
+    Album entries require a public `media_url` (i.groupme.com / cdn
+    form). `api.upload_image` returns one; the matching album POST
+    is `api.add_to_album` with a `[{media_url, media_type, "image",
+    media_source: "album"}]` body.
+
+    Videos are intentionally not offered yet — `file.groupme.com`
+    uploads return a `file_id`, which doesn't fit the album shape,
+    and we haven't captured a video-upload-with-media-url path.
+
+    `on_done()` fires after a successful add so the caller (album
+    viewer / album card) can refresh its tile flow / counts.
+    """
+    fd = Gtk.FileDialog()
+    fd.set_title("Add Photo to Album")
+    flt = Gtk.FileFilter()
+    flt.set_name("Images")
+    for mime in ("image/png", "image/jpeg", "image/webp", "image/gif"):
+        flt.add_mime_type(mime)
+    store = Gio.ListStore.new(Gtk.FileFilter)
+    store.append(flt)
+    fd.set_filters(store)
+    fd.set_default_filter(flt)
+
+    aid   = album.get("album_id") or album.get("id") or ""
+    title = album.get("title") or "album"
+
+    def on_picked(_fd, result):
+        try:
+            f    = fd.open_finish(result)
+            path = f.get_path()
+        except GLib.Error:
+            return   # user cancelled
+        try: parent.toast("Uploading photo…")
+        except Exception: pass
+
+        def worker():
+            url = api.upload_image(path)
+            if not url:
+                GLib.idle_add(lambda: _toast(parent, "Upload failed"))
+                return
+            media = [{"media_url":    url,
+                       "media_type":   "image",
+                       "media_source": "album"}]
+            r  = api.add_to_album(gid, aid, media)
+            ok = r is not None
+            def report():
+                _toast(parent, f"Added to '{title}'" if ok else "Add failed")
+                if ok and callable(on_done):
+                    try: on_done()
+                    except Exception: pass
+            GLib.idle_add(report)
+
+        run_in_background(worker)
+
+    fd.open(parent, None, on_picked)
+
+
+def _toast(parent, text):
+    try: parent.toast(text)
+    except Exception: pass
 
 
 def _add_media(api, group, album, media, parent, on_done):
