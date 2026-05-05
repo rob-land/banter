@@ -52,7 +52,7 @@ A native GNOME client for GroupMe, built with GTK4 and libadwaita.
   conversations
 - **Adaptive layout** — works on both desktop and mobile (tested on FuriOS
   on the Furi FLX1s and Debian on the Raspberry Pi 5)
-- **GNOME Platform 49** — follows libadwaita conventions, respects the
+- **GNOME Platform 50** — follows libadwaita conventions, respects the
   system colour scheme (light/dark)
 
 ---
@@ -121,12 +121,12 @@ sudo dnf install flatpak flatpak-builder
 sudo apt install flatpak flatpak-builder
 ```
 
-Add Flathub and install the GNOME 49 runtime:
+Add Flathub and install the GNOME 50 runtime:
 ```bash
 flatpak remote-add --if-not-exists flathub \
   https://dl.flathub.org/repo/flathub.flatpakrepo
 
-flatpak install flathub org.gnome.Platform//49 org.gnome.Sdk//49
+flatpak install flathub org.gnome.Platform//50 org.gnome.Sdk//50
 ```
 
 ### Build and run (x86_64)
@@ -160,7 +160,7 @@ sudo apt install qemu-user-static binfmt-support
 Install the aarch64 runtime (this downloads ~1 GB):
 ```bash
 flatpak install flathub --arch=aarch64 \
-  org.gnome.Platform//49 org.gnome.Sdk//49
+  org.gnome.Platform//50 org.gnome.Sdk//50
 ```
 
 ### Build for aarch64

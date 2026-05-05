@@ -46,7 +46,7 @@ sudo apt install flatpak-builder   # Debian/Ubuntu
 
 # Add GNOME runtime
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install flathub org.gnome.Platform//49 org.gnome.Sdk//49
+flatpak install flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
 # Build and install locally
 flatpak-builder --install --user --force-clean _flatpak land.rob.Banter.json
