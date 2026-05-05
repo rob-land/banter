@@ -1,6 +1,7 @@
 blueprint_compiler = find_program('blueprint-compiler')
 
 blueprint_sources = files(
+  'window.blp',
   'help-overlay.blp',
   'jump-to-date-dialog.blp',
 )

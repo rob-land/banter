@@ -1,0 +1,196 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $BanterWindow: Adw.ApplicationWindow {
+  title: _("Banter");
+  default-width: 980;
+  default-height: 720;
+  width-request: 360;
+  height-request: 360;
+
+  Adw.Breakpoint {
+    condition ("max-width: 600sp")
+
+    setters {
+      split.collapsed: true;
+      top_switcher.visible: false;
+      bottom_switcher.reveal: true;
+    }
+  }
+
+  content: Adw.ToastOverlay toast_overlay {
+    child: Box main_box {
+      orientation: vertical;
+
+      Adw.Banner offline_banner {
+        title: _("Offline — actions may fail until the connection returns");
+        revealed: false;
+      }
+
+      Adw.NavigationSplitView split {
+        vexpand: true;
+        min-sidebar-width: 280;
+        max-sidebar-width: 340;
+        sidebar-width-fraction: 0.33;
+
+        sidebar: Adw.NavigationPage sidebar_nav {
+          title: _("Banter");
+
+          child: Adw.ToolbarView sidebar_tv {
+            [top]
+            Adw.HeaderBar sidebar_header {
+              styles ["flat"]
+
+              [start]
+              MenuButton accounts_button {
+                icon-name: "system-users-symbolic";
+                tooltip-text: _("Accounts");
+                menu-model: accounts_menu;
+
+                styles ["flat"]
+              }
+
+              [end]
+              MenuButton primary_menu_button {
+                icon-name: "open-menu-symbolic";
+                tooltip-text: _("Main Menu");
+                primary: true;
+                menu-model: primary_menu;
+
+                styles ["flat"]
+              }
+
+              [end]
+              Button new_group_button {
+                icon-name: "list-add-symbolic";
+                tooltip-text: _("New Group");
+                clicked => $on_new_group_clicked();
+
+                styles ["flat"]
+              }
+            }
+
+            [top]
+            Adw.ViewSwitcher top_switcher {
+              stack: stack;
+              policy: narrow;
+            }
+
+            content: Box sidebar_body {
+              orientation: vertical;
+
+              SearchEntry search_entry {
+                placeholder-text: _("Search groups & contacts…");
+                margin-start: 8;
+                margin-end: 8;
+                margin-bottom: 6;
+                search-changed => $on_search_changed();
+              }
+
+              Adw.ViewStack stack {
+                vexpand: true;
+
+                Adw.ViewStackPage chats_stack_page {
+                  name: "chats";
+                  title: _("Chats");
+                  icon-name: "chat-message-new-symbolic";
+
+                  child: Box {
+                    orientation: vertical;
+
+                    Spinner chats_spinner {
+                      spinning: true;
+                      margin-top: 20;
+                      halign: center;
+                    }
+
+                    ScrolledWindow {
+                      vexpand: true;
+                      hscrollbar-policy: never;
+                      kinetic-scrolling: true;
+
+                      child: ListBox chats_list {
+                        selection-mode: single;
+                        row-activated => $on_chats_activated();
+
+                        styles ["navigation-sidebar"]
+                      };
+                    }
+                  };
+                }
+
+                Adw.ViewStackPage {
+                  name: "contacts";
+                  title: _("Contacts");
+                  icon-name: "address-book-new-symbolic";
+
+                  child: Box {
+                    orientation: vertical;
+
+                    Spinner contacts_spinner {
+                      spinning: true;
+                      margin-top: 20;
+                      halign: center;
+                    }
+
+                    ScrolledWindow {
+                      vexpand: true;
+                      hscrollbar-policy: never;
+                      kinetic-scrolling: true;
+
+                      child: ListBox contacts_list {
+                        selection-mode: single;
+                        row-activated => $on_contact_activated();
+
+                        styles ["navigation-sidebar"]
+                      };
+                    }
+                  };
+                }
+              }
+
+              Adw.ViewSwitcherBar bottom_switcher {
+                stack: stack;
+                reveal: false;
+              }
+            };
+          };
+        };
+
+        content: Adw.NavigationPage content_nav {
+          title: _("Banter");
+
+          child: Adw.ToolbarView content_tv {
+            content: Box content_wrap {
+              orientation: vertical;
+            };
+          };
+        };
+      }
+    };
+  };
+}
+
+menu primary_menu {
+  item {
+    label: _("Keyboard Shortcuts");
+    action: "app.shortcuts";
+  }
+
+  item {
+    label: _("About Banter");
+    action: "app.about";
+  }
+}
+
+menu accounts_menu {
+  item {
+    label: _("Manage Accounts");
+    action: "app.accounts";
+  }
+
+  item {
+    label: _("Sign Out");
+    action: "app.sign-out";
+  }
+}

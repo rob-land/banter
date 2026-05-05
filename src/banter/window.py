@@ -25,7 +25,37 @@ from .dialogs.pinned import PinnedDialog
 from .dialogs.jump_to_date import JumpToDateDialog
 
 
+@Gtk.Template(resource_path="/land/rob/Banter/ui/window.ui")
 class BanterWindow(Adw.ApplicationWindow):
+    __gtype_name__ = "BanterWindow"
+
+    # Top-level shell
+    toast_overlay:    Adw.ToastOverlay         = Gtk.Template.Child()
+    main_box:         Gtk.Box                  = Gtk.Template.Child()
+    offline_banner:   Adw.Banner               = Gtk.Template.Child()
+    split:            Adw.NavigationSplitView  = Gtk.Template.Child()
+
+    # Sidebar
+    sidebar_nav:      Adw.NavigationPage       = Gtk.Template.Child()
+    sidebar_tv:       Adw.ToolbarView          = Gtk.Template.Child()
+    sidebar_header:   Adw.HeaderBar            = Gtk.Template.Child()
+    accounts_button:  Gtk.MenuButton           = Gtk.Template.Child()
+    new_group_button: Gtk.Button               = Gtk.Template.Child()
+    top_switcher:     Adw.ViewSwitcher         = Gtk.Template.Child()
+    bottom_switcher:  Adw.ViewSwitcherBar      = Gtk.Template.Child()
+    search_entry:     Gtk.SearchEntry          = Gtk.Template.Child()
+    stack:            Adw.ViewStack            = Gtk.Template.Child()
+    chats_stack_page: Adw.ViewStackPage        = Gtk.Template.Child()
+    chats_list:       Gtk.ListBox              = Gtk.Template.Child()
+    chats_spinner:    Gtk.Spinner              = Gtk.Template.Child()
+    contacts_list:    Gtk.ListBox              = Gtk.Template.Child()
+    contacts_spinner: Gtk.Spinner              = Gtk.Template.Child()
+
+    # Content (per-chat view is mounted into content_wrap by _open_chat)
+    content_nav:      Adw.NavigationPage       = Gtk.Template.Child()
+    content_tv:       Adw.ToolbarView          = Gtk.Template.Child()
+    content_wrap:     Gtk.Box                  = Gtk.Template.Child()
+
     def __init__(self, app):
         super().__init__(application=app)
         self._config       = Config()
@@ -65,22 +95,18 @@ class BanterWindow(Adw.ApplicationWindow):
         # reveal. 0 means no reveal scheduled (so the next failure
         # arms one).
         self._offline_show_id = 0
-
-        self.set_title(APP_NAME)
-        self.set_default_size(980, 720)
-        # Keep a narrow min width so the split view has something to
-        # collapse to, but don't pin a minimum height — on phones with
-        # an on-screen keyboard the visible area shrinks to well under
-        # 600px, and a large min-height would prevent the compositor
-        # from shrinking the window to fit above the keyboard.
-        self.set_size_request(360, 360)
-
-        self._toast_overlay = Adw.ToastOverlay()
-        self.set_content(self._toast_overlay)
+        # Per-chat header bar built by _open_chat / _open_dm and mounted
+        # into the templated content_tv. Tracked so _clear_content can
+        # detach it before the next chat opens.
+        self._content_header = None
+        # Bell button on the per-chat header (set up in _open_chat /
+        # _open_dm); _apply_mute reads this to refresh the icon and
+        # menu after a mute change.
+        self._mute_btn = None
 
         if DEMO:
             self._api = MockGroupMeAPI()
-            self._build_main_ui(self._api.get_me())
+            self._enter_main(self._api.get_me())
             return
 
         acc = self._config.get_active_account()
@@ -89,20 +115,40 @@ class BanterWindow(Adw.ApplicationWindow):
                                     on_unauthorized=self._on_session_expired,
                                     on_online=self._on_api_online,
                                     on_offline=self._on_api_offline)
+            # Hide the main shell behind a verifying-spinner until the
+            # token check resolves; the templated layout exists already
+            # but we don't want users interacting with it before auth.
             spinner = Gtk.Spinner(spinning=True, margin_top=120,
                                    halign=Gtk.Align.CENTER)
-            self._toast_overlay.set_child(spinner)
+            self.toast_overlay.set_child(spinner)
 
             def verify():
                 me = self._api.get_me()
                 if me:
-                    GLib.idle_add(self._build_main_ui, me)
+                    GLib.idle_add(self._enter_main, me)
                 else:
                     GLib.idle_add(self._go_login)
 
             run_in_background(verify)
         else:
             self._go_login()
+
+    # ── Template callbacks (wired up in data/ui/window.blp) ──
+    @Gtk.Template.Callback()
+    def on_new_group_clicked(self, _btn):
+        self._new_group()
+
+    @Gtk.Template.Callback()
+    def on_search_changed(self, entry):
+        self._on_search(entry)
+
+    @Gtk.Template.Callback()
+    def on_chats_activated(self, lb, row):
+        self._on_chats_activated(lb, row)
+
+    @Gtk.Template.Callback()
+    def on_contact_activated(self, lb, row):
+        self._on_contact_activated(lb, row)
 
     # ── Mute helpers ──
     @staticmethod
@@ -228,7 +274,7 @@ class BanterWindow(Adw.ApplicationWindow):
 
     # ── Toast helper ──
     def toast(self, msg: str):
-        self._toast_overlay.add_toast(Adw.Toast.new(msg))
+        self.toast_overlay.add_toast(Adw.Toast.new(msg))
 
     # ── Login ──
     def _go_login(self):
@@ -324,70 +370,25 @@ class BanterWindow(Adw.ApplicationWindow):
         return False   # drop the idle_add
 
     # ── Main UI ──
-    def _build_main_ui(self, user: dict):
+    def _enter_main(self, user: dict):
+        """Wire the templated shell to the live API session.
+
+        The full layout (split view, sidebar, content area, offline
+        banner, breakpoint) is defined in data/ui/window.blp; this
+        method only restores main_box as the toast_overlay child (it
+        was swapped out for the verifying-spinner during auth) and
+        kicks off the data loads."""
         self._current_user = user
 
-        # Root split view
-        self._split = Adw.NavigationSplitView()
-        self._split.set_min_sidebar_width(280)
-        self._split.set_max_sidebar_width(340)
-        self._split.set_sidebar_width_fraction(0.33)
+        # Restore the templated main shell (it was replaced by the
+        # verifying-spinner in __init__ for the has-account path).
+        self.toast_overlay.set_child(self.main_box)
 
-        # ───────── SIDEBAR ─────────
-        self._build_sidebar()
-
-        # ───────── CONTENT ─────────
-        self._content_nav = Adw.NavigationPage(title=APP_NAME)
-        # ToolbarView wraps the content so header bars built by _open_chat /
-        # _open_dm sit inside a proper ToolbarView, enabling correct insets,
-        # safe-area handling, and integration with NavigationSplitView.
-        self._content_tv   = Adw.ToolbarView()
-        self._content_wrap = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self._content_header = None
-        self._mute_btn = None
-        self._content_tv.set_content(self._content_wrap)
-        self._content_nav.set_child(self._content_tv)
-        self._split.set_content(self._content_nav)
+        # Hover surfaces who's signed in without a non-actionable menu row.
+        if user.get("name"):
+            self.accounts_button.set_tooltip_text(f"Signed in as {user['name']}")
 
         self._show_placeholder()
-
-        # Wrap the split view in a vertical Box so the offline banner
-        # can sit above everything — including the sidebar in collapsed
-        # mode on small screens. Adw.Banner reveals/hides itself with
-        # an animation; default state is hidden.
-        self._offline_banner = Adw.Banner()
-        self._offline_banner.set_title(
-            "Offline — actions may fail until the connection returns")
-        self._offline_banner.set_revealed(False)
-
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        main_box.append(self._offline_banner)
-        # vexpand so the split view fills the remaining height after
-        # the banner. Without this, Gtk.Box gives the split only its
-        # natural minimum height and the bottom half of the window
-        # ends up empty.
-        self._split.set_vexpand(True)
-        main_box.append(self._split)
-        self._toast_overlay.set_child(main_box)
-
-        # ── Adaptive breakpoint ──
-        # Without this, NavigationSplitView never auto-collapses because
-        # the content Gtk.Box reports a minimum width of 0 so the internal
-        # threshold (min_sidebar + content_min) is never exceeded.
-        # Adw.Breakpoint is the libadwaita-idiomatic way to collapse the
-        # split view at a specific window width.
-        try:
-            condition = Adw.BreakpointCondition.parse("max-width: 600sp")
-            bp = Adw.Breakpoint.new(condition)
-            bp.add_setter(self._split, "collapsed", True)
-            bp.add_setter(self._top_switcher, "visible", False)
-            bp.add_setter(self._bottom_switcher, "reveal", True)
-            self.add_breakpoint(bp)
-            dbg("Breakpoint added: collapse split view at max-width 600sp")
-        except Exception as e:
-            # Fallback for older libadwaita builds that lack Breakpoint
-            dbg("Adw.Breakpoint unavailable (%s) – using width-watch fallback", e)
-            self.connect("notify::default-width", self._on_width_change)
 
         self._setup_actions()
         self.refresh_chats()
@@ -428,14 +429,6 @@ class BanterWindow(Adw.ApplicationWindow):
         uid = str(user_id)
         if uid and name and uid not in self._name_cache:
             self._name_cache[uid] = name
-
-    def _on_width_change(self, *_):
-        """Fallback collapse logic for libadwaita < 1.4."""
-        w = self.get_width()
-        narrow = w < 600
-        self._split.set_collapsed(narrow)
-        self._top_switcher.set_visible(not narrow)
-        self._bottom_switcher.set_reveal(narrow)
 
     # ── Application-level push client (singleton) ──
     def _start_push(self):
@@ -517,8 +510,8 @@ class BanterWindow(Adw.ApplicationWindow):
         # Always move to top, update preview + time — keeps the
         # sidebar in most-recent order regardless of which chat
         # is currently open.
-        self._chats_list.remove(row)
-        self._chats_list.insert(row, 0)
+        self.chats_list.remove(row)
+        self.chats_list.insert(row, 0)
         ts = subject.get("created_at")
         if ts:
             row.update_time(ts)
@@ -558,8 +551,8 @@ class BanterWindow(Adw.ApplicationWindow):
         text   = (subject.get("text") or "").strip()
 
         if row is not None:
-            self._chats_list.remove(row)
-            self._chats_list.insert(row, 0)
+            self.chats_list.remove(row)
+            self.chats_list.insert(row, 0)
             ts = subject.get("created_at")
             if ts:
                 row.update_time(ts)
@@ -579,121 +572,6 @@ class BanterWindow(Adw.ApplicationWindow):
         self._send_desktop_notification(
             sender, notif_text, tag=f"dm-{other_id}")
 
-    def _build_sidebar(self):
-        sidebar_nav = Adw.NavigationPage(title=APP_NAME)
-
-        # Adw.ToolbarView is required for NavigationPage to properly host a
-        # header bar inside the NavigationSplitView adaptive navigation stack.
-        sidebar_tv = Adw.ToolbarView()
-
-        # Header
-        hdr = Adw.HeaderBar()
-        hdr.add_css_class("flat")
-
-        # Primary menu: pack first so it sits at the rightmost edge.
-        primary_menu = Gio.Menu()
-        primary_menu.append("Keyboard Shortcuts", "app.shortcuts")
-        primary_menu.append(f"About {APP_NAME}",  "app.about")
-        menu_btn = Gtk.MenuButton(icon_name="open-menu-symbolic")
-        menu_btn.add_css_class("flat")
-        menu_btn.set_tooltip_text("Main Menu")
-        menu_btn.set_menu_model(primary_menu)
-        hdr.pack_end(menu_btn)
-
-        ng_btn = Gtk.Button(icon_name="list-add-symbolic")
-        ng_btn.add_css_class("flat")
-        ng_btn.set_tooltip_text("New Group")
-        ng_btn.connect("clicked", lambda *_: self._new_group())
-        hdr.pack_end(ng_btn)
-
-        acc_btn = Gtk.MenuButton(icon_name="system-users-symbolic")
-        acc_btn.add_css_class("flat")
-        # Hover surfaces who's signed in without a non-actionable menu row.
-        user = self._current_user
-        acc_btn.set_tooltip_text(
-            f"Signed in as {user.get('name','')}" if user.get("name") else "Accounts")
-        menu = Gio.Menu()
-        menu.append("Manage Accounts", "app.accounts")
-        menu.append("Sign Out", "app.sign-out")
-        acc_btn.set_menu_model(menu)
-        hdr.pack_start(acc_btn)
-
-        sidebar_tv.add_top_bar(hdr)
-
-        # Body of the sidebar (search + stack + tab bar)
-        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-
-        self._search_entry = Gtk.SearchEntry()
-        self._search_entry.set_placeholder_text("Search groups & contacts…")
-        self._search_entry.connect("search-changed", self._on_search)
-        self._search_entry.set_margin_start(8)
-        self._search_entry.set_margin_end(8)
-        self._search_entry.set_margin_bottom(6)
-        body.append(self._search_entry)
-
-        # View stack (Chats / Contacts)
-        self._stack = Adw.ViewStack()
-
-        # ─ Chats page (groups + DMs merged, sorted by recency) ─
-        chats_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self._chats_spinner = Gtk.Spinner(spinning=True, margin_top=20,
-                                           halign=Gtk.Align.CENTER)
-        chats_page.append(self._chats_spinner)
-        self._chats_list = Gtk.ListBox()
-        self._chats_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        self._chats_list.add_css_class("navigation-sidebar")
-        self._chats_list.connect("row-activated", self._on_chats_activated)
-        chats_scroll = Gtk.ScrolledWindow()
-        chats_scroll.set_vexpand(True)
-        chats_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        chats_scroll.set_kinetic_scrolling(True)
-        chats_scroll.set_child(self._chats_list)
-        chats_page.append(chats_scroll)
-        self._stack.add_titled_with_icon(
-            chats_page, "chats", "Chats", "chat-message-new-symbolic")
-        # Keep reference to ViewStackPage for needs-attention dot
-        self._chats_page = self._stack.get_page(chats_page)
-
-        # ─ Contacts page ─
-        cts_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self._contacts_spinner = Gtk.Spinner(spinning=True, margin_top=20,
-                                              halign=Gtk.Align.CENTER)
-        cts_page.append(self._contacts_spinner)
-        self._contacts_list = Gtk.ListBox()
-        self._contacts_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        self._contacts_list.add_css_class("navigation-sidebar")
-        self._contacts_list.connect("row-activated", self._on_contact_activated)
-        cts_scroll = Gtk.ScrolledWindow()
-        cts_scroll.set_vexpand(True)
-        cts_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        cts_scroll.set_kinetic_scrolling(True)
-        cts_scroll.set_child(self._contacts_list)
-        cts_page.append(cts_scroll)
-        self._stack.add_titled_with_icon(
-            cts_page, "contacts", "Contacts", "address-book-new-symbolic")
-
-        body.append(self._stack)
-
-        # Adaptive switchers: top in the header on wide layouts,
-        # bottom bar when the split collapses to a single column.
-        # Defaults match the wide state — the breakpoint flips them.
-        self._top_switcher = Adw.ViewSwitcher()
-        self._top_switcher.set_stack(self._stack)
-        self._top_switcher.set_policy(Adw.ViewSwitcherPolicy.NARROW)
-        # Second top bar (below the headerbar) — leaves the header's
-        # title slot free so the NavigationPage title (the app name)
-        # keeps showing.
-        sidebar_tv.add_top_bar(self._top_switcher)
-
-        self._bottom_switcher = Adw.ViewSwitcherBar()
-        self._bottom_switcher.set_stack(self._stack)
-        self._bottom_switcher.set_reveal(False)
-        body.append(self._bottom_switcher)
-
-        sidebar_tv.set_content(body)
-        sidebar_nav.set_child(sidebar_tv)
-        self._split.set_sidebar(sidebar_nav)
-
     # ── Placeholder ──
     def _show_placeholder(self):
         self._clear_content()
@@ -702,7 +580,7 @@ class BanterWindow(Adw.ApplicationWindow):
         # mobile back-navigation button exist before any group is opened.
         hdr = Adw.HeaderBar()
         hdr.add_css_class("flat")
-        self._content_tv.add_top_bar(hdr)
+        self.content_tv.add_top_bar(hdr)
         self._content_header = hdr
 
         page = Adw.StatusPage(
@@ -711,27 +589,27 @@ class BanterWindow(Adw.ApplicationWindow):
             description="Select a group from the sidebar to start chatting."
         )
         page.set_vexpand(True)
-        self._content_wrap.append(page)
-        self._content_nav.set_title(APP_NAME)
+        self.content_wrap.append(page)
+        self.content_nav.set_title(APP_NAME)
 
     def _clear_content(self):
         if self._chat_view:
             self._chat_view.stop()
             self._chat_view = None
         if self._content_header is not None:
-            self._content_tv.remove(self._content_header)
+            self.content_tv.remove(self._content_header)
             self._content_header = None
         self._mute_btn = None
-        child = self._content_wrap.get_first_child()
+        child = self.content_wrap.get_first_child()
         while child:
             nxt = child.get_next_sibling()
-            self._content_wrap.remove(child)
+            self.content_wrap.remove(child)
             child = nxt
 
     # ── Unified Chats (groups + DMs) ──
     def refresh_chats(self):
-        self._chats_spinner.set_spinning(True)
-        self._chats_spinner.set_visible(True)
+        self.chats_spinner.set_spinning(True)
+        self.chats_spinner.set_visible(True)
 
         def worker():
             groups = self._api.get_groups_all()
@@ -759,8 +637,8 @@ class BanterWindow(Adw.ApplicationWindow):
             return 0
 
     def _display_chats(self, groups, chats):
-        self._chats_spinner.set_spinning(False)
-        self._chats_spinner.set_visible(False)
+        self.chats_spinner.set_spinning(False)
+        self.chats_spinner.set_visible(False)
         self._all_groups = groups
         self._all_dms    = chats
         self._rows       = {}
@@ -775,10 +653,10 @@ class BanterWindow(Adw.ApplicationWindow):
                     self._push.subscribe_group(gid)
 
         # Clear existing rows
-        child = self._chats_list.get_first_child()
+        child = self.chats_list.get_first_child()
         while child:
             nxt = child.get_next_sibling()
-            self._chats_list.remove(child)
+            self.chats_list.remove(child)
             child = nxt
 
         # Build combined list sorted by most-recent message
@@ -791,7 +669,7 @@ class BanterWindow(Adw.ApplicationWindow):
         me_id = (self._current_user or {}).get("id")
         for conv_type, conv in items:
             row = ConversationRow(conv, conv_type, self._config, me_id=me_id)
-            self._chats_list.append(row)
+            self.chats_list.append(row)
 
             if conv_type == "group":
                 gid = str(conv["id"])
@@ -816,7 +694,7 @@ class BanterWindow(Adw.ApplicationWindow):
             for c in chats
         )
         if hasattr(self, '_chats_page'):
-            self._chats_page.set_needs_attention(total_unread > 0)
+            self.chats_stack_page.set_needs_attention(total_unread > 0)
 
     def _on_chats_activated(self, lb, row):
         if not isinstance(row, ConversationRow):
@@ -829,13 +707,13 @@ class BanterWindow(Adw.ApplicationWindow):
             other = row.conv.get("other_user", {})
             other_id = str(other.get("id", ""))
             self._open_dm(other, other_id)
-        self._split.set_show_content(True)
+        self.split.set_show_content(True)
 
     # ── Contacts (populated from group members) ──
     def _load_contacts(self):
         """Fetch group members in the background and populate the contacts tab."""
-        self._contacts_spinner.set_spinning(True)
-        self._contacts_spinner.set_visible(True)
+        self.contacts_spinner.set_spinning(True)
+        self.contacts_spinner.set_visible(True)
 
         def worker():
             # Fetch groups WITH members (no omit=memberships)
@@ -874,8 +752,8 @@ class BanterWindow(Adw.ApplicationWindow):
         self._display_contacts(contacts)
 
     def _display_contacts(self, contacts):
-        self._contacts_spinner.set_spinning(False)
-        self._contacts_spinner.set_visible(False)
+        self.contacts_spinner.set_spinning(False)
+        self.contacts_spinner.set_visible(False)
         self._all_contacts = contacts
         # Populate name cache from contact list
         for c in contacts:
@@ -884,10 +762,10 @@ class BanterWindow(Adw.ApplicationWindow):
             if uid and name:
                 self._name_cache[uid] = name
 
-        child = self._contacts_list.get_first_child()
+        child = self.contacts_list.get_first_child()
         while child:
             nxt = child.get_next_sibling()
-            self._contacts_list.remove(child)
+            self.contacts_list.remove(child)
             child = nxt
 
         if not contacts:
@@ -898,11 +776,11 @@ class BanterWindow(Adw.ApplicationWindow):
             lbl.add_css_class("dim-label")
             lbl.set_margin_top(32); lbl.set_margin_bottom(32)
             row.set_child(lbl)
-            self._contacts_list.append(row)
+            self.contacts_list.append(row)
             return
 
         for c in contacts:
-            self._contacts_list.append(ContactRow(c))
+            self.contacts_list.append(ContactRow(c))
 
     # ── Selection handlers ──
     def _on_contact_activated(self, lb, row):
@@ -978,8 +856,8 @@ class BanterWindow(Adw.ApplicationWindow):
         call_btn.connect("clicked", self._on_call_clicked, group["id"])
         hdr.pack_end(call_btn)
 
-        self._content_nav.set_title(esc(group.get("name","Group")))
-        self._content_tv.add_top_bar(hdr)
+        self.content_nav.set_title(esc(group.get("name","Group")))
+        self.content_tv.add_top_bar(hdr)
         self._content_header = hdr
 
         # Register per-group window actions
@@ -992,7 +870,7 @@ class BanterWindow(Adw.ApplicationWindow):
             config=self._config,
         )
         cv.set_vexpand(True)
-        self._content_wrap.append(cv)
+        self.content_wrap.append(cv)
         self._clear_poll_cards()
         self._chat_view = cv
 
@@ -1007,7 +885,7 @@ class BanterWindow(Adw.ApplicationWindow):
             self.toast("Cannot open DM: no user ID")
             return
         self._open_dm(user, str(user_id))
-        self._split.set_show_content(True)
+        self.split.set_show_content(True)
 
     # ── Contact detail (Android-style profile sheet) ──
     def open_contact_detail(self, user: dict, user_id: str):
@@ -1078,8 +956,8 @@ class BanterWindow(Adw.ApplicationWindow):
                           str(other_user_id))
         hdr.pack_end(call_btn)
 
-        self._content_nav.set_title(esc(name))
-        self._content_tv.add_top_bar(hdr)
+        self.content_nav.set_title(esc(name))
+        self.content_tv.add_top_bar(hdr)
         self._content_header = hdr
 
         self._register_dm_actions(other_user, other_user_id)
@@ -1097,7 +975,7 @@ class BanterWindow(Adw.ApplicationWindow):
             config=self._config,
         )
         cv.set_vexpand(True)
-        self._content_wrap.append(cv)
+        self.content_wrap.append(cv)
         self._clear_poll_cards()
         self._chat_view = cv
 
@@ -1105,7 +983,7 @@ class BanterWindow(Adw.ApplicationWindow):
     def _on_search(self, entry):
         q = entry.get_text().lower()
 
-        child = self._chats_list.get_first_child()
+        child = self.chats_list.get_first_child()
         while child:
             if isinstance(child, ConversationRow):
                 conv = child.conv
@@ -1119,7 +997,7 @@ class BanterWindow(Adw.ApplicationWindow):
                     child.set_visible(not q or q in n or q in p)
             child = child.get_next_sibling()
 
-        child = self._contacts_list.get_first_child()
+        child = self.contacts_list.get_first_child()
         while child:
             if isinstance(child, ContactRow):
                 n = (child.contact.get("name") or "").lower()
@@ -1202,8 +1080,8 @@ class BanterWindow(Adw.ApplicationWindow):
             # Move to top of unified chats list + refresh preview/time
             preview = msgs.get("preview", {}) or {}
             if row is not None:
-                self._chats_list.remove(row)
-                self._chats_list.insert(row, 0)
+                self.chats_list.remove(row)
+                self.chats_list.insert(row, 0)
                 ts = msgs.get("last_message_created_at")
                 if ts:
                     row.update_time(ts)
@@ -1250,8 +1128,8 @@ class BanterWindow(Adw.ApplicationWindow):
 
             # Move to top + refresh preview/time
             if row is not None:
-                self._chats_list.remove(row)
-                self._chats_list.insert(row, 0)
+                self.chats_list.remove(row)
+                self.chats_list.insert(row, 0)
                 ts = lm.get("created_at")
                 if ts:
                     row.update_time(ts)
@@ -1286,7 +1164,7 @@ class BanterWindow(Adw.ApplicationWindow):
             getattr(r, "_unread_count_n", 0) > 0
             for r in self._rows.values())
         if hasattr(self, '_chats_page'):
-            self._chats_page.set_needs_attention(any_unread_persistent)
+            self.chats_stack_page.set_needs_attention(any_unread_persistent)
 
     def _send_desktop_notification(self, title: str, body: str,
                                     tag: str = "banter-msg"):
