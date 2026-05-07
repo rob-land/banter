@@ -1,0 +1,48 @@
+name: Flatpak
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  flatpak:
+    runs-on: docker
+    container:
+      image: catthehacker/ubuntu:act-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flatpak + flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Add flathub remote
+        run: |
+          flatpak remote-add --if-not-exists --user flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install GNOME 50 runtime + SDK
+        run: |
+          flatpak install --user --noninteractive flathub \
+            org.gnome.Platform//50 \
+            org.gnome.Sdk//50
+
+      - name: Build flatpak (x86_64)
+        run: |
+          flatpak-builder --user --repo=repo --force-clean _flatpak \
+            build-aux/flatpak/land.rob.Banter.json
+
+      - name: Bundle
+        run: |
+          flatpak build-bundle --arch=x86_64 repo \
+            banter-x86_64.flatpak land.rob.Banter
+
+      - name: Upload bundle as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: banter-x86_64-flatpak
+          path: banter-x86_64.flatpak
+          retention-days: 30
