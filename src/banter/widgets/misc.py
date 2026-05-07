@@ -3,11 +3,13 @@
 import json
 import urllib.request
 from datetime import datetime
-from gi.repository import Gtk, Adw, GLib, GdkPixbuf, Gdk, Gio
+from gi.repository import Gtk, Adw, GLib, Gdk, Gio
 
 from ..constants import CACHE_DIR, dbg
 from ..async_utils import run_in_background
-from ..helpers import load_image_async, load_audio_async, _cache_key
+from ..helpers import (
+    load_texture_async, load_audio_async, load_video_async, _cache_key,
+)
 from .base import StandardDialog
 
 
@@ -55,25 +57,14 @@ class ImageAttachment(Gtk.Frame):
         gest.connect("pressed", self._on_click)
         self.add_controller(gest)
 
-        load_image_async(url, self._on_loaded)
+        load_texture_async(url, self.MAX_W, self.MAX_H, self._on_loaded)
 
-    def _on_loaded(self, path):
-        if path:
-            try:
-                # Scale the image then encode to PNG bytes so we can build
-                # a Gdk.Texture from the in-memory buffer.
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                    path, self.MAX_W, self.MAX_H, True)
-                ok, buf = pixbuf.save_to_bufferv("png", [], [])
-                if ok:
-                    texture = Gdk.Texture.new_from_bytes(
-                        GLib.Bytes.new(buf))
-                    self._picture.set_paintable(texture)
-                    self._stack.set_visible_child_name("image")
-                    return
-            except Exception:
-                pass
-        self._stack.set_visible_child_name("error")
+    def _on_loaded(self, texture):
+        if texture is None:
+            self._stack.set_visible_child_name("error")
+            return
+        self._picture.set_paintable(texture)
+        self._stack.set_visible_child_name("image")
 
     def _on_click(self, gest, n, x, y):
         dialog = StandardDialog(title="Image", width=720, height=640)
@@ -198,35 +189,48 @@ class VideoAttachment(Gtk.Overlay):
         self.add_controller(lp)
 
         if preview_url:
-            load_image_async(preview_url, self._on_preview_loaded)
+            load_texture_async(preview_url, self.MAX_W, self.MAX_H,
+                               self._on_preview_loaded)
 
-    def _on_preview_loaded(self, path):
-        if not path or self._playing:
+    def _on_preview_loaded(self, texture):
+        if texture is None or self._playing:
             return
-        try:
-            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                path, self.MAX_W, self.MAX_H, True)
-            ok, buf = pixbuf.save_to_bufferv("png", [], [])
-            if ok:
-                texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(buf))
-                self._picture.set_paintable(texture)
-        except Exception:
-            pass
+        self._picture.set_paintable(texture)
 
     def _on_click(self, *_):
         if self._playing or not self._video_url:
             return
         self._playing = True
+        # Swap the play icon for a spinner while the clip downloads.
+        # `Gtk.Video.set_file` on a remote URI was failing with
+        # `gtk_gst_media_file_source_setup_cb: assertion 'stream != NULL'`
+        # — playback from a local file is materially more reliable.
+        try:
+            self._play_overlay.set_from_icon_name(
+                "content-loading-symbolic")
+        except Exception:
+            pass
+        self.set_cursor(None)
+        load_video_async(self._video_url, self._on_video_ready)
+
+    def _on_video_ready(self, path):
+        if not path:
+            try:
+                self._play_overlay.set_from_icon_name(
+                    "dialog-warning-symbolic")
+            except Exception:
+                pass
+            self._playing = False
+            return
         video = Gtk.Video()
         video.set_size_request(self.MAX_W, self.MAX_H)
         video.set_autoplay(True)
-        video.set_file(Gio.File.new_for_uri(self._video_url))
+        video.set_filename(path)
         self.set_child(video)
         try:
             self.remove_overlay(self._play_overlay)
         except Exception:
             pass
-        self.set_cursor(None)
 
     def _on_secondary(self, _g, _n, x, y):
         self._show_menu_at(x, y)
@@ -264,9 +268,17 @@ class VideoAttachment(Gtk.Overlay):
 
         url    = self._video_url
         parent = self._parent
+        # Reuse the playback cache if we already downloaded this clip.
+        from ..constants import CACHE_DIR
+        cached = CACHE_DIR / f"{_cache_key(url)}.video"
+
         def worker():
             try:
-                urllib.request.urlretrieve(url, dest)
+                if cached.exists():
+                    import shutil
+                    shutil.copy(cached, dest)
+                else:
+                    urllib.request.urlretrieve(url, dest)
                 ok = True
             except Exception:
                 ok = False

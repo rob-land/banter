@@ -123,6 +123,113 @@ def load_image_async(url: str, callback, avatar: bool = False):
     run_in_background(worker)
 
 
+def load_texture_async(url: str, max_w: int, max_h: int, callback):
+    """Fetch (or cache-hit) `url`, decode + scale to fit
+    `max_w`×`max_h`, and call `callback(Gdk.Texture | None)` on the
+    main thread.
+
+    Why: when many cached images land at once (opening a chat with
+    yesterday's photo dump), per-image decode+scale on the main loop
+    blocks long enough for the compositor to put up a "Banter is
+    failing to respond" prompt. This helper keeps the decode on the
+    worker thread so only the texture handoff hits the main loop.
+
+    The size caps prevent a 4 MP photo from becoming a multi-megabyte
+    texture for a 280-px bubble. Failure modes match `load_image_async`:
+    network error → `.fail` marker, future cache miss → callback(None)."""
+    if not url:
+        GLib.idle_add(callback, None)
+        return
+
+    def worker():
+        key  = _cache_key(url)
+        path = CACHE_DIR / f"{key}.img"
+        fail = CACHE_DIR / f"{key}.fail"
+        if not path.exists():
+            if fail.exists():
+                GLib.idle_add(callback, None)
+                return
+            dbg("img-fetch: %s", url)
+            try:
+                req = urllib.request.Request(url)
+                req.add_header("User-Agent", f"GroupMe-GNOME/{APP_VERSION}")
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    path.write_bytes(r.read())
+            except Exception as e:
+                dbg("img-fetch: failed %s – %s", url, e)
+                try:
+                    fail.write_bytes(b"")
+                except Exception:
+                    pass
+                GLib.idle_add(callback, None)
+                return
+        try:
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                str(path), max_w, max_h, True)
+            texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+        except Exception as e:
+            dbg("load_texture: decode failed for %s: %s", path, e)
+            GLib.idle_add(callback, None)
+            return
+        GLib.idle_add(callback, texture)
+
+    run_in_background(worker)
+
+
+def load_video_async(url: str, callback):
+    """Download a video attachment to CACHE_DIR (streaming in chunks
+    so multi-megabyte clips don't sit in memory) and call
+    `callback(path_or_None)` on the main thread.
+
+    Why route playback through a local file: `Gtk.Video.set_file` on a
+    remote URI hands the work to `playbin` + `souphttpsrc`. If the HTTP
+    fetch (TLS handshake, redirect, range request) hiccups, the
+    pipeline ends up with no source pad and gtkgst raises
+    `gtk_gst_media_file_source_setup_cb: assertion 'stream != NULL'`,
+    which surfaces as a video that never starts. Caching to disk first
+    sidesteps that failure mode and gives "Save Video…" a free
+    pre-warmed source."""
+    if not url:
+        GLib.idle_add(callback, None)
+        return
+
+    def worker():
+        key  = _cache_key(url)
+        path = CACHE_DIR / f"{key}.video"
+        fail = CACHE_DIR / f"{key}.video.fail"
+        if path.exists():
+            dbg("video-cache: hit %s", path.name)
+            GLib.idle_add(callback, str(path))
+            return
+        if fail.exists():
+            GLib.idle_add(callback, None)
+            return
+        dbg("video-fetch: %s", url)
+        try:
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", f"GroupMe-GNOME/{APP_VERSION}")
+            with urllib.request.urlopen(req, timeout=30) as r, \
+                 open(path, "wb") as out:
+                while True:
+                    chunk = r.read(64 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+        except Exception as e:
+            dbg("video-fetch: failed %s – %s", url, e)
+            try:
+                if path.exists():
+                    path.unlink()
+                fail.write_bytes(b"")
+            except Exception:
+                pass
+            GLib.idle_add(callback, None)
+            return
+        GLib.idle_add(callback, str(path))
+
+    run_in_background(worker)
+
+
 def load_audio_async(api, url: str, callback):
     """Download and cache a voice-note audio file; call
     callback(path_or_None) on the main thread.
