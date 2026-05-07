@@ -102,6 +102,34 @@ and haven't been touched yet. Loose priority order, top = most useful.
   Web Calling SDK protocol natively (Trouter WebSocket + WebRTC +
   Skype conv API) — see "Full in-app calls" below.
 
+## Background-notifier follow-ups
+
+**Status:** core feature works. `banter --background` runs the
+`BanterNotifier` daemon (push + REST catch-up + persisted watermark);
+the **Notifications → Run in background** toggle in the Accounts
+prefs dialog wires up xdg-desktop-portal autostart. Three known gaps:
+
+- **Live-socket transplant** — when a notification click escalates
+  background → window, the notifier is `stop()`ped and the new
+  `BanterWindow` opens its own Faye WebSocket from scratch. A brief
+  reconnect window where push events are missed. Fix: hand off the
+  live `GroupMePush` + verified `GroupMeAPI` from the notifier into
+  the window so no handshake happens. Needs a constructor branch on
+  `BanterWindow` (it currently builds those itself in `__init__`).
+
+- **Window-mode watermark sync** — `BanterWindow._last_msg_ids` lives
+  in memory only; only `BanterNotifier` persists to disk via
+  `Config.set_last_seen_map`. After a window-only session followed
+  by a `--background` launch, the notifier may re-fire notifications
+  for messages the user already saw in-app. Fix: have the window
+  write its `_last_msg_ids` into `Config` on each push/bg-poll
+  update (or at least on shutdown).
+
+- **Portal parent handle** — `background_portal.request_background`
+  is called with `parent_xdg_handle=""`, so the portal prompt is
+  unparented. Pass the prefs dialog's `Gtk.Native` handle (via
+  `xdp_parent_export`) so the prompt attaches to the dialog.
+
 ## Edit-message UX polish
 
 **Status:** core feature works. Two small issues for later.

@@ -10,11 +10,15 @@ from pathlib import Path
 
 # ── Debug setup ─────────────────────────────────────────────────────
 _raw_args = sys.argv[1:]
-DEBUG = any(a in ("--debug", "--verbose", "-v", "-d") for a in _raw_args)
-DEMO  = any(a in ("--demo",) for a in _raw_args)
+DEBUG      = any(a in ("--debug", "--verbose", "-v", "-d") for a in _raw_args)
+DEMO       = any(a in ("--demo",) for a in _raw_args)
+# Headless notification daemon mode — set by the autostart entry point
+# and intended to be launched at login. The flag is stripped from argv
+# here so GApplication's own option parser doesn't reject it.
+BACKGROUND = any(a in ("--background",) for a in _raw_args)
 sys.argv = [sys.argv[0]] + [
     a for a in _raw_args
-    if a not in ("--debug", "--verbose", "-v", "-d", "--demo")
+    if a not in ("--debug", "--verbose", "-v", "-d", "--demo", "--background")
 ]
 
 logging.basicConfig(

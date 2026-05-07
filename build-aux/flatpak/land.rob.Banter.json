@@ -13,6 +13,7 @@
     "--socket=pulseaudio",
     "--device=dri",
     "--talk-name=org.freedesktop.Notifications",
+    "--talk-name=org.freedesktop.portal.Background",
     "--talk-name=org.freedesktop.secrets"
   ],
 

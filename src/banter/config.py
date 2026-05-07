@@ -185,3 +185,19 @@ class Config:
         if v == -1:
             return True
         return time.time() < v
+
+    # ── per-account last-seen message ids (background notifier) ──
+    #
+    # Keyed by user_id so multi-account installs don't collide. The inner
+    # map is conv_key → message_id, where conv_key is the same string
+    # form the notifier uses internally ("group:<gid>" / "dm:<other_id>").
+    # Window mode doesn't read this — it seeds its in-memory map from
+    # the current /groups+/chats responses on startup. The notifier is
+    # the only consumer; persistence lets it tell "new since last
+    # background run" from "ancient backlog" across reboots.
+    def get_last_seen_map(self, user_id: str) -> dict:
+        return dict(self._data.get("last_seen", {}).get(str(user_id), {}))
+
+    def set_last_seen_map(self, user_id: str, mapping: dict):
+        self._data.setdefault("last_seen", {})[str(user_id)] = dict(mapping)
+        self.save()

@@ -37,11 +37,14 @@ src/
 ├── application.py      BanterApplication (Adw.Application), startup/activate, About + Shortcuts dialogs
 ├── api.py              GroupMe REST API client (urllib, no third-party HTTP lib)
 ├── async_utils.py      run_in_background helper for worker threads
+├── background_portal.py  org.freedesktop.portal.Background helper for autostart toggle
 ├── config.py           Accounts and preferences (multi-account support)
-├── constants.py        APP_ID, APP_VERSION, DEBUG flag, dbg()/log() helpers, OAUTH_PORT
+├── constants.py        APP_ID, APP_VERSION, DEBUG/DEMO/BACKGROUND flags, dbg()/log() helpers, OAUTH_PORT
 ├── css.py              Application stylesheet (inline CSS string)
 ├── helpers.py          Image loading and caching
 ├── mock_api.py         Demo-mode fixture used by --demo (no network)
+├── notifications.py    NotificationDispatcher — Gio.Notification I/O + mute/call-event routing
+├── notifier.py         BanterNotifier — headless --background daemon (push + REST catch-up + notify)
 ├── oauth.py            OAuth sign-in dialog + local callback server; BANTER_CLIENT_ID lives here
 ├── push.py             WebSocket push client (Bayeux/Faye protocol)
 ├── secrets.py          libsecret token storage
@@ -76,6 +79,7 @@ src/
 - New GroupMe features are HAR-driven: capture from `web.groupme.com`, document the endpoint in `GROUPME_API.md`, wire it in `api.py`, add UI. Don't guess endpoints. See the file for the patterns Banter has captured (pin/unpin, edit, albums, calls, file upload).
 - GStreamer is used for two things: voice recording (`autoaudiosrc → opusenc → oggmux → filesink` in `chat_view.py`) and inline video playback (`Gtk.Video` in `widgets/misc.py`). The Flatpak manifest grants `--socket=pulseaudio` for the recording path.
 - GroupMe calls are Microsoft Teams meetings — `_on_call_clicked` opens the meeting URL via `Gio.AppInfo.launch_default_for_uri` rather than embedding a call composite. **Don't** try to add WebRTC; the official client uses the closed-source ACS Web SDK.
+- `banter --background` runs as a headless notification daemon (`BanterNotifier`): no window, holds the GApplication via `app.hold()`, owns the Faye WebSocket + a REST catch-up that compares against a per-account watermark persisted in `Config.{get,set}_last_seen_map`. First-ever run with an empty watermark seeds quietly to avoid flooding on initial autostart. Notification clicks re-enter `_on_activate`, which builds the window and retires the notifier. Autostart is opt-in via the **Notifications** group in the Accounts preferences dialog → `org.freedesktop.portal.Background` `RequestBackground`.
 
 ## Build workflow
 

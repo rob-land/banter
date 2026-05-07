@@ -7,12 +7,13 @@ from pathlib import Path
 from gi.repository import Gtk, Adw, Gdk, Gio, GLib
 
 from .config import Config
-from .constants import APP_ID, APP_NAME, APP_VERSION, DEBUG, CONFIG_DIR, CACHE_DIR, dbg, log
+from .constants import APP_ID, APP_NAME, APP_VERSION, BACKGROUND, DEBUG, CONFIG_DIR, CACHE_DIR, dbg, log
+from .notifier import BanterNotifier
 from .window import BanterWindow
 
 
 class BanterApplication(Adw.Application):
-    def __init__(self):
+    def __init__(self, *, background: bool = False):
         super().__init__(
             application_id=APP_ID,
             flags=Gio.ApplicationFlags.HANDLES_OPEN,
@@ -20,7 +21,9 @@ class BanterApplication(Adw.Application):
         self.connect("activate", self._on_activate)
         self.connect("open",     self._on_open)
         self.connect("startup",  self._on_startup)
-        self._window = None
+        self._background = background
+        self._window     = None
+        self._notifier   = None
 
     def _on_startup(self, *_):
         """Register the app on the session D-Bus (required for notifications)
@@ -56,26 +59,53 @@ class BanterApplication(Adw.Application):
         self.add_action(call_join_action)
 
     def _bring_to_front(self):
-        if self._window:
-            self._window.present()
+        # Notifications activated from --background mode hit this path
+        # before any window exists; route through _on_activate so the
+        # window gets built on demand (and the headless notifier shut
+        # down) the same way an explicit launch would.
+        self._on_activate()
 
     def _on_call_join(self, _action, param):
         """Handler for the `app.call-join` notification button. Re-uses
         the window's existing call-launch path so we share the toast
-        and error handling."""
-        if not self._window or param is None:
+        and error handling. In --background mode the window may not
+        exist yet — _bring_to_front() will build it before we route."""
+        if param is None:
             return
         gid = param.get_string()
         if not gid:
             return
         self._bring_to_front()
-        self._window._on_call_clicked(None, gid)
+        if self._window:
+            self._window._on_call_clicked(None, gid)
 
     def _on_activate(self, *_):
+        # Headless launch path: spin up the notifier, hold the app
+        # alive without a visible window, and exit early. Notification
+        # clicks (or a second `banter` invocation) will re-enter this
+        # method and fall through to the window-building branch below.
+        if self._background and self._window is None and self._notifier is None:
+            self._notifier = BanterNotifier(self)
+            if self._notifier.start():
+                self.hold()
+                return
+            # No active account → nothing for the daemon to do.
+            self._notifier = None
+            return
+
         self._load_css()
         self._register_bundled_icons()
         if not self._window:
             self._window = BanterWindow(self)
+            # If a notifier was holding the app alive, retire it now —
+            # the window owns the API + push from this point on. The
+            # window's own _start_push reconnects the WebSocket; we
+            # accept the brief overlap rather than transplanting the
+            # live socket (a future refactor).
+            if self._notifier is not None:
+                self._notifier.stop()
+                self._notifier = None
+                self.release()
         self._window.present()
 
     def _register_bundled_icons(self):
@@ -172,10 +202,12 @@ def main():
         print(f"Banter  v{APP_VERSION}")
         print("Usage: banter [OPTIONS]")
         print("  -d, --debug    Verbose debug logging")
+        print("  --background   Run as a headless notification daemon")
+        print("                 (no window; intended for autostart at login)")
         print("  -h, --help     Show this message")
         sys.exit(0)
 
-    app = BanterApplication()
+    app = BanterApplication(background=BACKGROUND)
     sys.exit(app.run(sys.argv))
 
 
