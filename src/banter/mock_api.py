@@ -168,13 +168,21 @@ class MockGroupMeAPI:
                 if m["id"] == before_id:
                     msgs = msgs[i+1:]
                     break
-        if since_id:
+        # `since_id` and `after_id` are both "newer than this id" filters
+        # for our purposes. ChatView polling passes one or the other.
+        # If the pivot id doesn't match any known message, return [] —
+        # otherwise the unbounded loop would yield every message and
+        # _append_new would re-append them as duplicates.
+        pivot = since_id or after_id
+        if pivot:
+            found = False
             cut = []
             for m in msgs:
-                if m["id"] == since_id:
+                if m["id"] == pivot:
+                    found = True
                     break
                 cut.append(m)
-            msgs = cut
+            msgs = cut if found else []
         return msgs[:limit]
 
     def send_message(self, gid, text: str, attachments=None,
@@ -301,6 +309,19 @@ class MockGroupMeAPI:
                 if m["id"] == before_id:
                     msgs = msgs[i+1:]
                     break
+        # Honor `since_id` / `after_id` so the 15-second DM poll loop
+        # in ChatView stops re-appending the entire conversation each
+        # tick. See get_messages above for the same logic.
+        pivot = since_id or after_id
+        if pivot:
+            found = False
+            cut = []
+            for m in msgs:
+                if m["id"] == pivot:
+                    found = True
+                    break
+                cut.append(m)
+            msgs = cut if found else []
         return msgs[:limit]
 
     def send_dm(self, recipient_id: str, text: str, attachments=None,
