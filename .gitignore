@@ -15,6 +15,10 @@ src/const.py
 # Blueprint output (compiled from data/ui/*.blp at build time)
 data/ui/*.ui
 
+# Translations
+po/*.pot
+po/*.mo
+
 # Python
 __pycache__/
 *.py[cod]
