@@ -9,17 +9,26 @@
 
   <description>
     <p>
-      Banter is a native GNOME client for GroupMe, built with GTK4 and
-      libadwaita. It supports group chats, direct messages, reactions,
-      image sharing, member management, and real-time push notifications
-      via the GroupMe WebSocket API.
+      Banter is an unofficial GTK4 / libadwaita client for GroupMe. It is
+      not affiliated with or endorsed by GroupMe or Microsoft; the app
+      talks to GroupMe's public REST and WebSocket APIs the same way the
+      official web client does, with an OAuth sign-in flow that never
+      stores a password.
+    </p>
+    <p>
+      Conversations live in a single adaptive sidebar — groups and direct
+      messages mixed together, sorted by recent activity. Messages stream
+      in via WebSocket push, drafts persist across chat switches, and the
+      UI follows the system colour scheme with a layout that collapses
+      cleanly to phone widths.
     </p>
     <ul>
-      <li>Real-time messages via WebSocket push</li>
-      <li>Emoji reactions with tooltips and details</li>
-      <li>Image gallery and photo sharing</li>
-      <li>Group settings, muting, and member management</li>
-      <li>Adaptive layout for desktop and mobile</li>
+      <li>Real-time messaging via WebSocket push</li>
+      <li>Emoji reactions, polls, @-mentions, edit / delete, and in-chat search</li>
+      <li>Image, video, voice, and file attachments with inline playback</li>
+      <li>Group gallery with albums and member management</li>
+      <li>OAuth sign-in via the system browser; tokens stored in libsecret</li>
+      <li>Adaptive layout — desktop, Phosh phones, Raspberry Pi 5</li>
     </ul>
   </description>
 
@@ -64,7 +73,17 @@
   <releases>
     <release version="0.1.0" date="2026-05-01">
       <description>
-        <p>Initial release.</p>
+        <p>First public release. Highlights:</p>
+        <ul>
+          <li>Real-time group chats and direct messages, unified in one sidebar</li>
+          <li>Compose with @-mention autocomplete, drafts, and quote-reply</li>
+          <li>Emoji reactions, polls, edit / delete, and in-chat search</li>
+          <li>Image, video, voice, and file attachments — videos play inline</li>
+          <li>Group gallery with albums; member, settings, event, and poll management</li>
+          <li>OAuth sign-in via the system browser, tokens stored in libsecret</li>
+          <li>Desktop notifications and per-conversation mute</li>
+          <li>Adaptive layout for desktop and Linux phones (FuriOS, Raspberry Pi 5)</li>
+        </ul>
       </description>
     </release>
   </releases>
