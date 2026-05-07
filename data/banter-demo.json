@@ -9,41 +9,41 @@
   "groups": [
     {
       "id": "1001",
-      "name": "Cabin Trip",
-      "description": "Annual lake-house planning",
+      "name": "Park Day Crew",
+      "description": "July park trip planning",
       "image_url": null,
       "share_url": "https://groupme.test/join_group/1001/abc",
       "created_at": 1714435200,
       "updated_at": 1714867200,
       "members": [
-        {"id": "10000001", "user_id": "10000001", "nickname": "Alex Demo",  "image_url": null},
-        {"id": "20000001", "user_id": "20000001", "nickname": "Jamie Park", "image_url": null},
-        {"id": "20000002", "user_id": "20000002", "nickname": "Sam Liu",     "image_url": null},
-        {"id": "20000003", "user_id": "20000003", "nickname": "Riley Chen", "image_url": null},
-        {"id": "20000004", "user_id": "20000004", "nickname": "Morgan Reed","image_url": null}
+        {"id": "10000001", "user_id": "10000001", "nickname": "Alex Demo",      "image_url": null},
+        {"id": "20000001", "user_id": "20000001", "nickname": "Mickey Hayes",   "image_url": null},
+        {"id": "20000002", "user_id": "20000002", "nickname": "Minnie Brooks",  "image_url": null},
+        {"id": "20000003", "user_id": "20000003", "nickname": "Donald Reyes",   "image_url": null},
+        {"id": "20000004", "user_id": "20000004", "nickname": "Daisy Chen",     "image_url": null}
       ],
       "messages": {
         "count": 7,
         "last_message_id": "msg-1001-007",
         "last_message_created_at": 1714867800,
-        "preview": {"nickname": "Jamie Park", "text": "Created new poll 'Friday or Saturday departure?'", "image_url": null, "attachments": []}
+        "preview": {"nickname": "Mickey Hayes", "text": "Created new poll 'First stop: castle photos or fantasy ride?'", "image_url": null, "attachments": []}
       },
       "_messages": [
-        {"id": "msg-1001-001", "source_guid": "g1", "user_id": "20000001", "name": "Jamie Park",  "text": "Confirmed the cabin for July 12-15. Sleeps 8.", "created_at": 1714780800, "favorited_by": [], "attachments": []},
-        {"id": "msg-1001-002", "source_guid": "g2", "user_id": "20000002", "name": "Sam Liu",     "text": "Wait, that's the weekend after the wedding right?", "created_at": 1714782600, "favorited_by": ["20000003"], "attachments": []},
-        {"id": "msg-1001-003", "source_guid": "g3", "user_id": "20000001", "name": "Jamie Park",  "text": "Yeah we land back Tuesday so we're good.", "created_at": 1714783200, "favorited_by": [], "attachments": []},
-        {"id": "msg-1001-004", "source_guid": "g4", "user_id": "10000001", "name": "Alex Demo",   "text": "I can drive — got the SUV. @Riley Chen want a ride?", "created_at": 1714855200, "favorited_by": ["20000003", "20000001"], "attachments": [{"type": "mentions", "user_ids": ["20000003"], "loci": [[28, 11]]}]},
-        {"id": "msg-1001-005", "source_guid": "g5", "user_id": "20000003", "name": "Riley Chen",  "text": "Yes please! Picking me up at 6am sharp 😅", "created_at": 1714862400, "favorited_by": ["10000001"], "attachments": []},
-        {"id": "msg-1001-006", "source_guid": "g6", "user_id": "20000003", "name": "Riley Chen",  "text": "I'll bring the kayaks!", "created_at": 1714867200, "favorited_by": [], "attachments": []},
-        {"id": "msg-1001-007", "source_guid": "g7", "user_id": "20000001", "name": "Jamie Park",  "text": "Created new poll 'Friday or Saturday departure?'", "created_at": 1714867800, "favorited_by": [], "attachments": [{"type": "poll", "poll_id": "poll-1001-001"}]}
+        {"id": "msg-1001-001", "source_guid": "g1", "user_id": "20000001", "name": "Mickey Hayes",   "text": "Tickets are confirmed for July 12–15! All four park days locked in.", "created_at": 1714780800, "favorited_by": [], "attachments": []},
+        {"id": "msg-1001-002", "source_guid": "g2", "user_id": "20000003", "name": "Donald Reyes",   "text": "Wait, that's the weekend after the wedding right?", "created_at": 1714782600, "favorited_by": ["20000004"], "attachments": []},
+        {"id": "msg-1001-003", "source_guid": "g3", "user_id": "20000001", "name": "Mickey Hayes",   "text": "Yeah we land back Tuesday so we're good.", "created_at": 1714783200, "favorited_by": [], "attachments": []},
+        {"id": "msg-1001-004", "source_guid": "g4", "user_id": "10000001", "name": "Alex Demo",      "text": "I can drive — got the SUV. @Daisy Chen want a ride?", "created_at": 1714855200, "favorited_by": ["20000004", "20000001"], "attachments": [{"type": "mentions", "user_ids": ["20000004"], "loci": [[28, 11]]}]},
+        {"id": "msg-1001-005", "source_guid": "g5", "user_id": "20000004", "name": "Daisy Chen",     "text": "Yes please! Picking me up at 6am sharp 😅", "created_at": 1714862400, "favorited_by": ["10000001"], "attachments": []},
+        {"id": "msg-1001-006", "source_guid": "g6", "user_id": "20000004", "name": "Daisy Chen",     "text": "I'll bring the snack rotation list!", "created_at": 1714867200, "favorited_by": [], "attachments": []},
+        {"id": "msg-1001-007", "source_guid": "g7", "user_id": "20000001", "name": "Mickey Hayes",   "text": "Created new poll 'First stop: castle photos or fantasy ride?'", "created_at": 1714867800, "favorited_by": [], "attachments": [{"type": "poll", "poll_id": "poll-1001-001"}]}
       ],
       "_polls": [
         {
           "id": "poll-1001-001",
-          "subject": "Friday or Saturday departure?",
+          "subject": "First stop: castle photos or fantasy ride?",
           "options": [
-            {"id": "1", "title": "Friday after work (≈6pm)", "votes": 3},
-            {"id": "2", "title": "Saturday morning (early)", "votes": 1}
+            {"id": "1", "title": "Castle photo op (beat the lines)", "votes": 3},
+            {"id": "2", "title": "Fantasy ride (gates just opened)", "votes": 1}
           ],
           "type": "single",
           "status": "active",
@@ -58,79 +58,79 @@
     },
     {
       "id": "1002",
-      "name": "Dev Team Standup",
-      "description": "async daily updates",
+      "name": "Castle Sleepover",
+      "description": "Lily's princess birthday — Saturday plan",
       "image_url": null,
       "share_url": "https://groupme.test/join_group/1002/xyz",
       "created_at": 1712275200,
       "updated_at": 1714855200,
       "members": [
-        {"id": "10000001", "user_id": "10000001", "nickname": "Alex Demo",   "image_url": null},
-        {"id": "20000005", "user_id": "20000005", "nickname": "Casey Wong", "image_url": null},
-        {"id": "20000006", "user_id": "20000006", "nickname": "Drew Singh", "image_url": null},
-        {"id": "20000007", "user_id": "20000007", "nickname": "Pat Rivera", "image_url": null}
+        {"id": "10000001", "user_id": "10000001", "nickname": "Alex Demo",      "image_url": null},
+        {"id": "20000005", "user_id": "20000005", "nickname": "Walt Foster",    "image_url": null},
+        {"id": "20000006", "user_id": "20000006", "nickname": "Belle Marshall", "image_url": null},
+        {"id": "20000007", "user_id": "20000007", "nickname": "Ella Davis",     "image_url": null}
       ],
       "messages": {
         "count": 4,
         "last_message_id": "msg-1002-004",
         "last_message_created_at": 1714855200,
-        "preview": {"nickname": "Pat Rivera", "text": "Merged. CI is green.", "image_url": null, "attachments": []}
+        "preview": {"nickname": "Ella Davis", "text": "Castle's confirmed for Saturday 3pm. Photos are going to be magical 🏰", "image_url": null, "attachments": []}
       },
       "_messages": [
-        {"id": "msg-1002-001", "source_guid": "d1", "user_id": "20000005", "name": "Casey Wong", "text": "Quick standup: I'm finishing the migration script today, blocked on review for #142.", "created_at": 1714842000, "favorited_by": [], "attachments": []},
-        {"id": "msg-1002-002", "source_guid": "d2", "user_id": "20000006", "name": "Drew Singh", "text": "I'll review #142 after lunch. Deploying the auth refactor to staging this morning.", "created_at": 1714843200, "favorited_by": ["20000005"], "attachments": []},
-        {"id": "msg-1002-003", "source_guid": "d3", "user_id": "10000001", "name": "Alex Demo",   "text": "On the dashboard work — should have a draft PR up by EOD.", "created_at": 1714851600, "favorited_by": [], "attachments": []},
-        {"id": "msg-1002-004", "source_guid": "d4", "user_id": "20000007", "name": "Pat Rivera",  "text": "Merged. CI is green.", "created_at": 1714855200, "favorited_by": ["10000001", "20000005", "20000006"], "attachments": []}
+        {"id": "msg-1002-001", "source_guid": "d1", "user_id": "20000005", "name": "Walt Foster",    "text": "Quick check-in: cake's ordered, decorations land Friday. Still need to confirm costume rentals.", "created_at": 1714842000, "favorited_by": [], "attachments": []},
+        {"id": "msg-1002-002", "source_guid": "d2", "user_id": "20000006", "name": "Belle Marshall", "text": "I'll handle costumes — taking the kids to the rental place after lunch.", "created_at": 1714843200, "favorited_by": ["20000005"], "attachments": []},
+        {"id": "msg-1002-003", "source_guid": "d3", "user_id": "10000001", "name": "Alex Demo",      "text": "On party favors — should have them packaged by EOD.", "created_at": 1714851600, "favorited_by": [], "attachments": []},
+        {"id": "msg-1002-004", "source_guid": "d4", "user_id": "20000007", "name": "Ella Davis",     "text": "Castle's confirmed for Saturday 3pm. Photos are going to be magical 🏰", "created_at": 1714855200, "favorited_by": ["10000001", "20000005", "20000006"], "attachments": []}
       ]
     },
     {
       "id": "1003",
-      "name": "Book Club",
+      "name": "Fairy Tale Book Club",
       "description": "monthly picks",
       "image_url": null,
       "share_url": "https://groupme.test/join_group/1003/qrs",
       "created_at": 1709251200,
       "updated_at": 1714608000,
       "members": [
-        {"id": "10000001", "user_id": "10000001", "nickname": "Alex Demo",      "image_url": null},
-        {"id": "20000008", "user_id": "20000008", "nickname": "Taylor Brooks","image_url": null},
-        {"id": "20000009", "user_id": "20000009", "nickname": "Jordan Pierce","image_url": null}
+        {"id": "10000001", "user_id": "10000001", "nickname": "Alex Demo",     "image_url": null},
+        {"id": "20000008", "user_id": "20000008", "nickname": "Pete Wallace",  "image_url": null},
+        {"id": "20000009", "user_id": "20000009", "nickname": "Marian Cole",   "image_url": null}
       ],
       "messages": {
         "count": 3,
         "last_message_id": "msg-1003-003",
         "last_message_created_at": 1714608000,
-        "preview": {"nickname": "Taylor Brooks", "text": "Voting closes Friday — get your picks in!", "image_url": null, "attachments": []}
+        "preview": {"nickname": "Pete Wallace", "text": "Voting closes Friday — get your picks in!", "image_url": null, "attachments": []}
       },
       "_messages": [
-        {"id": "msg-1003-001", "source_guid": "b1", "user_id": "20000008", "name": "Taylor Brooks", "text": "May pick options:\n1. Piranesi\n2. The Overstory\n3. Babel", "created_at": 1714521600, "favorited_by": [], "attachments": []},
-        {"id": "msg-1003-002", "source_guid": "b2", "user_id": "20000009", "name": "Jordan Pierce","text": "Babel was incredible, voting #3", "created_at": 1714525200, "favorited_by": ["20000008"], "attachments": []},
-        {"id": "msg-1003-003", "source_guid": "b3", "user_id": "20000008", "name": "Taylor Brooks", "text": "Voting closes Friday — get your picks in!", "created_at": 1714608000, "favorited_by": [], "attachments": []}
+        {"id": "msg-1003-001", "source_guid": "b1", "user_id": "20000008", "name": "Pete Wallace", "text": "May pick options:\n1. The Snow Queen\n2. Sleeping Beauty\n3. Beauty and the Beast (the original)", "created_at": 1714521600, "favorited_by": [], "attachments": []},
+        {"id": "msg-1003-002", "source_guid": "b2", "user_id": "20000009", "name": "Marian Cole",  "text": "Beauty and the Beast was incredible, voting #3", "created_at": 1714525200, "favorited_by": ["20000008"], "attachments": []},
+        {"id": "msg-1003-003", "source_guid": "b3", "user_id": "20000008", "name": "Pete Wallace", "text": "Voting closes Friday — get your picks in!", "created_at": 1714608000, "favorited_by": [], "attachments": []}
       ]
     }
   ],
   "dms": [
     {
       "id": "dm-30000001",
-      "other_user": {"id": "30000001", "name": "Jamie Park", "avatar_url": null},
+      "other_user": {"id": "30000001", "name": "Mickey Hayes", "avatar_url": null},
       "updated_at": 1714864800,
       "last_message": {"id": "dm-30000001-005", "created_at": 1714864800, "text": "👍", "user_id": "30000001"},
       "_messages": [
-        {"id": "dm-30000001-001", "source_guid": "j1", "user_id": "30000001",  "name": "Jamie Park", "text": "hey, you free Sat morning? Coffee?", "created_at": 1714798800, "favorited_by": [], "attachments": []},
-        {"id": "dm-30000001-002", "source_guid": "j2", "user_id": "10000001", "name": "Alex Demo",   "text": "Yeah! 9am at the usual?", "created_at": 1714799400, "favorited_by": [], "attachments": []},
-        {"id": "dm-30000001-003", "source_guid": "j3", "user_id": "30000001",  "name": "Jamie Park", "text": "perfect", "created_at": 1714799700, "favorited_by": [], "attachments": []},
-        {"id": "dm-30000001-004", "source_guid": "j4", "user_id": "10000001", "name": "Alex Demo",   "text": "see you then", "created_at": 1714799820, "favorited_by": ["30000001"], "attachments": []},
-        {"id": "dm-30000001-005", "source_guid": "j5", "user_id": "30000001",  "name": "Jamie Park", "text": "👍", "created_at": 1714864800, "favorited_by": [], "attachments": []}
+        {"id": "dm-30000001-001", "source_guid": "j1", "user_id": "30000001", "name": "Mickey Hayes", "text": "hey, you free Sat morning? Coffee?", "created_at": 1714798800, "favorited_by": [], "attachments": []},
+        {"id": "dm-30000001-002", "source_guid": "j2", "user_id": "10000001", "name": "Alex Demo",    "text": "Yeah! 9am at the usual?", "created_at": 1714799400, "favorited_by": [], "attachments": []},
+        {"id": "dm-30000001-003", "source_guid": "j3", "user_id": "30000001", "name": "Mickey Hayes", "text": "perfect", "created_at": 1714799700, "favorited_by": [], "attachments": []},
+        {"id": "dm-30000001-004", "source_guid": "j4", "user_id": "10000001", "name": "Alex Demo",    "text": "see you then", "created_at": 1714799820, "favorited_by": ["30000001"], "attachments": []},
+        {"id": "dm-30000001-005", "source_guid": "j5", "user_id": "30000001", "name": "Mickey Hayes", "text": "👍", "created_at": 1714864800, "favorited_by": [], "attachments": []}
       ]
     },
     {
       "id": "dm-30000002",
-      "other_user": {"id": "30000002", "name": "Sam Liu", "avatar_url": null},
+      "other_user": {"id": "30000002", "name": "Daisy Chen", "avatar_url": null},
       "updated_at": 1714780800,
       "last_message": {"id": "dm-30000002-002", "created_at": 1714780800, "text": "Will do, thanks!", "user_id": "10000001"},
       "_messages": [
-        {"id": "dm-30000002-001", "source_guid": "s1", "user_id": "30000002", "name": "Sam Liu",   "text": "Forgot to mention — bring a swimsuit, there's a hot tub", "created_at": 1714780200, "favorited_by": [], "attachments": []},
-        {"id": "dm-30000002-002", "source_guid": "s2", "user_id": "10000001","name": "Alex Demo",  "text": "Will do, thanks!", "created_at": 1714780800, "favorited_by": [], "attachments": []}
+        {"id": "dm-30000002-001", "source_guid": "s1", "user_id": "30000002", "name": "Daisy Chen", "text": "Forgot to mention — pack ponchos, the parade goes through right after lunch and it's sometimes wet", "created_at": 1714780200, "favorited_by": [], "attachments": []},
+        {"id": "dm-30000002-002", "source_guid": "s2", "user_id": "10000001", "name": "Alex Demo",  "text": "Will do, thanks!", "created_at": 1714780800, "favorited_by": [], "attachments": []}
       ]
     }
   ]
