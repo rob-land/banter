@@ -227,7 +227,7 @@ banter/
 ├── build-aux/flatpak/land.rob.Banter.json         Flatpak manifest
 ├── data/
 │   ├── land.rob.Banter.desktop.in
-│   ├── land.rob.Banter.appdata.xml.in
+│   ├── land.rob.Banter.metainfo.xml.in
 │   ├── land.rob.Banter.gschema.xml
 │   └── icons/
 │       └── hicolor/

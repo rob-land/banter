@@ -10,9 +10,9 @@ desktop_file = i18n.merge_file(
   install_dir: datadir / 'applications',
 )
 
-appdata_file = i18n.merge_file(
-  input:       'land.rob.Banter.appdata.xml.in',
-  output:      'land.rob.Banter.appdata.xml',
+metainfo_file = i18n.merge_file(
+  input:       'land.rob.Banter.metainfo.xml.in',
+  output:      'land.rob.Banter.metainfo.xml',
   po_dir:      '../po',
   install:     true,
   install_dir: datadir / 'metainfo',
