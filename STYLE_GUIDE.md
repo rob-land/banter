@@ -249,9 +249,12 @@ Keep it identical across projects so the user has muscle memory for
   hostnames, IPs, emails, paths with `/home/rob/`). Sections:
   *What this project is*, *Tech stack*, *Source layout*,
   *Build workflow*, *Key conventions*, *Things to watch out for*.
-- **DESIGN.md / ROADMAP.md / TODO.md / BACKLOG.md** — optional;
-  pick one name and stick with it. Tonic uses DESIGN.md, jamjar uses
-  jamjar-design.md + ROADMAP.md + TODO.md, banter uses BACKLOG.md.
+- **DESIGN.md** — optional architecture overview. The "why" of the
+  project: pedagogy, stack, design decisions, state machine. Tonic
+  and jamjar have one.
+- **TODO.md** — optional backlog with rationale. One file per
+  project; older `ROADMAP.md` / `BACKLOG.md` variants should fold
+  into it. Banter and jamjar have one.
 - **STYLE_GUIDE.md** — this file. Drop in unchanged.
 
 ## .gitignore
@@ -289,8 +292,9 @@ build-aux/flatpak/python3-deps.json.bak
 ```
 
 `CLAUDE.md` is **tracked**, not gitignored. The `.claude/` directory
-(Claude workspace state) is ignored; `CLAUDE.md` at the project root
-is project documentation and ships with the repo.
+(Claude workspace state) is ignored in full — no carve-out for
+`settings.json` or anything else. `CLAUDE.md` at the project root is
+project documentation and ships with the repo.
 
 ## Phone install (postmarketOS / Phosh)
 
