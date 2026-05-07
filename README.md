@@ -2,11 +2,6 @@
 
 A native GNOME client for GroupMe, built with GTK4 and libadwaita.
 
-> ⚠️ **Honest disclosure**: Every line of code in this project was written by
-> [Claude.ai](https://claude.ai) (Anthropic's AI assistant). I apologise in
-> advance for the AI slop. Pull requests that fix the inevitable weird
-> decisions are very welcome.
-
 ---
 
 ## Features
@@ -54,6 +49,13 @@ A native GNOME client for GroupMe, built with GTK4 and libadwaita.
   on the Furi FLX1s and Debian on the Raspberry Pi 5)
 - **GNOME Platform 50** — follows libadwaita conventions, respects the
   system colour scheme (light/dark)
+
+## How it was made
+
+> ⚠️ **Honest disclosure**: Every line of code in this project was written
+> by [Claude.ai](https://claude.ai) (Anthropic's AI assistant). I apologise
+> in advance for the AI slop. Pull requests that fix the inevitable weird
+> decisions are very welcome.
 
 ---
 
