@@ -4,15 +4,8 @@ Uses a local HTTP server on port 7654 to capture the access token.
 With --share=network in the Flatpak manifest the sandbox shares the host
 network namespace, so the browser can reach localhost:7654 inside the app.
 
-The banter:// URI scheme is also registered as a secondary handler so that
-on mobile platforms where localhost loopback may not be available, the OS
-can deliver the redirect directly to the running application via GApplication.
-
 GroupMe app registration at dev.groupme.com should set Callback URL to:
   http://localhost:7654
-
-(The banter://oauth/callback alternative works too if you prefer it and
-update the registered callback URL accordingly.)
 """
 
 import threading
@@ -102,9 +95,10 @@ class OAuthCallbackServer:
 class LoginDialog(Adw.Dialog):
     """One-click sign-in dialog.
 
-    Opens the system browser to the GroupMe login page.  The access token is
-    captured either via the local HTTP server (desktop/Flatpak with
-    --share=network) or via the banter:// URI scheme (mobile fallback).
+    Opens the system browser to the GroupMe login page. The access token
+    is captured by a local HTTP server on port 7654; the Flatpak manifest
+    sets --share=network so the browser can reach the loopback inside the
+    sandbox.
     """
 
     def __init__(self, parent, on_login, *, quit_on_cancel: bool = True):
@@ -201,15 +195,6 @@ class LoginDialog(Adw.Dialog):
             Gio.AppInfo.launch_default_for_uri(auth_url, None)
         except Exception as e:
             self._on_oauth_error(f"Could not open browser: {e}")
-
-    def receive_token(self, token: str):
-        """Called by BanterWindow.deliver_oauth_token() when the OS delivers
-        the banter:// URI scheme redirect (mobile fallback path)."""
-        dbg("LoginDialog: token received via URI scheme")
-        if self._server:
-            self._server.stop()
-            self._server = None
-        self._on_token_received(token)
 
     def _on_token_received(self, token: str):
         dbg("LoginDialog: token received, verifying…")

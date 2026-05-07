@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Banter
 Comment=GroupMe client for GNOME
-Exec=banter %u
+Exec=banter
 Icon=land.rob.Banter
 Terminal=false
 Type=Application
@@ -10,4 +10,3 @@ Keywords=GroupMe;chat;messaging;groups;
 StartupNotify=true
 StartupWMClass=banter
 X-GNOME-UsesNotifications=true
-MimeType=x-scheme-handler/banter;

@@ -46,8 +46,6 @@ version to whatever GroupMe's web bundle currently advertises.
 * Authorize URL: `https://oauth.groupme.com/oauth/authorize`
 * Callback URL: `http://localhost:7654` (registered with the app)
 * Banter's `BANTER_CLIENT_ID` lives in `src/oauth.py`.
-* GroupMe redirects via a `banter://` custom URI scheme handled in
-  `application.py`.
 
 ## Response envelope
 

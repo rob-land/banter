@@ -1,7 +1,6 @@
 """Banter — Adw.Application subclass and entry point."""
 
 import sys
-import urllib.parse
 from pathlib import Path
 
 from gi.repository import Gtk, Adw, Gdk, Gio, GLib
@@ -14,12 +13,8 @@ from .window import BanterWindow
 
 class BanterApplication(Adw.Application):
     def __init__(self, *, background: bool = False):
-        super().__init__(
-            application_id=APP_ID,
-            flags=Gio.ApplicationFlags.HANDLES_OPEN,
-        )
+        super().__init__(application_id=APP_ID)
         self.connect("activate", self._on_activate)
-        self.connect("open",     self._on_open)
         self.connect("startup",  self._on_startup)
         self._background = background
         self._window     = None
@@ -136,23 +131,6 @@ class BanterApplication(Adw.Application):
             dbg("no bundled icon path found relative to %s", here)
         except Exception as e:
             dbg("icon search-path registration failed: %s", e)
-
-    def _on_open(self, app, files, n_files, hint):
-        """Handle banter:// URI scheme redirects from the OAuth browser flow."""
-        self._on_activate()   # ensure window exists
-        for f in files:
-            uri = f.get_uri()
-            dbg("open-uri: %s", uri)
-            if uri and "access_token=" in uri:
-                parsed = urllib.parse.urlparse(uri)
-                params = urllib.parse.parse_qs(parsed.query)
-                if not params.get("access_token"):
-                    params.update(urllib.parse.parse_qs(parsed.fragment))
-                token = (params.get("access_token") or [""])[0].strip()
-                if token and self._window:
-                    # Deliver the token to whoever is waiting for it
-                    GLib.idle_add(self._window.deliver_oauth_token, token)
-                    return
 
     def _load_css(self):
         css = Gtk.CssProvider()

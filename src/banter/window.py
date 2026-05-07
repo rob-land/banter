@@ -285,11 +285,6 @@ class BanterWindow(Adw.ApplicationWindow):
         self._login_dialog = LoginDialog(self, on_login=self._on_login)
         self._login_dialog.present(self)
 
-    def deliver_oauth_token(self, token: str):
-        """Called by BanterApplication when the banter:// redirect URI is opened."""
-        if hasattr(self, "_login_dialog") and self._login_dialog:
-            self._login_dialog.receive_token(token)
-
     def _on_login(self, token: str, user: dict):
         self._login_dialog = None
         self._api = GroupMeAPI(token,
