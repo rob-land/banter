@@ -1,0 +1,73 @@
+{
+  "_comment": "DRAFT Flathub-side manifest. NOT used by build-all.sh — that picks up land.rob.Banter.json next to this file. When submitting to Flathub, copy this file's contents into the flathub/land.rob.Banter repo. Keep this in sync with land.rob.Banter.json — only the 'banter' module's sources block should differ.",
+
+  "app-id": "land.rob.Banter",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "50",
+  "sdk": "org.gnome.Sdk",
+  "command": "banter",
+
+  "add-extensions": {
+    "org.freedesktop.Platform.ffmpeg-full": {
+      "version": "25.08",
+      "directory": "lib/ffmpeg",
+      "add-ld-path": ".",
+      "no-autodownload": false,
+      "autodelete": false
+    }
+  },
+
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=fallback-x11",
+    "--socket=wayland",
+    "--socket=pulseaudio",
+    "--device=dri",
+    "--talk-name=org.freedesktop.Notifications",
+    "--talk-name=org.freedesktop.portal.Background",
+    "--talk-name=org.freedesktop.secrets"
+  ],
+
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/man",
+    "/share/doc",
+    "/share/gtk-doc",
+    "*.la",
+    "*.a"
+  ],
+
+  "cleanup-commands": [
+    "mkdir -p /app/lib/ffmpeg"
+  ],
+
+  "modules": [
+    {
+      "name": "blueprint-compiler",
+      "buildsystem": "meson",
+      "cleanup": ["*"],
+      "sources": [
+        {
+          "type": "git",
+          "url": "https://gitlab.gnome.org/jwestman/blueprint-compiler.git",
+          "tag": "v0.16.0"
+        }
+      ]
+    },
+    {
+      "name": "banter",
+      "buildsystem": "meson",
+      "config-opts": [],
+      "sources": [
+        {
+          "type": "git",
+          "url": "https://codeberg.org/robland/banter.git",
+          "tag": "v0.1.0",
+          "commit": "a71a12a05d6c4214b5e5bf932630f6adcef703d2"
+        }
+      ]
+    }
+  ]
+}
