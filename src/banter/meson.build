@@ -1,24 +1,16 @@
-pkgdatadir = get_option('prefix') / get_option('datadir') / meson.project_name()
-moduledir  = pkgdatadir / 'banter'
-
 configure_file(
-  input:  'banter.in',
-  output: 'banter',
-  configuration: {
-    'PYTHON'     : python.full_path(),
-    'VERSION'    : meson.project_version(),
-    'pkgdatadir' : pkgdatadir,
-    'moduledir'  : moduledir,
-  },
-  install: true,
-  install_dir: get_option('bindir'),
+  input:        'banter.in',
+  output:       'banter',
+  configuration: conf,
+  install:      true,
+  install_dir:  bindir,
   install_mode: 'rwxr-xr-x',
 )
 
-version_py = configure_file(
-  input:  '_version.py.in',
-  output: '_version.py',
-  configuration: {'VERSION': meson.project_version()},
+const_py = configure_file(
+  input:         'const.py.in',
+  output:        'const.py',
+  configuration: py_conf,
 )
 
 banter_sources = files(
@@ -67,6 +59,6 @@ dialog_sources = files(
   'dialogs/settings.py',
 )
 
-python.install_sources(banter_sources + [version_py], subdir: 'banter')
+python.install_sources(banter_sources + [const_py], subdir: 'banter')
 python.install_sources(widget_sources,  subdir: 'banter/widgets')
 python.install_sources(dialog_sources,  subdir: 'banter/dialogs')

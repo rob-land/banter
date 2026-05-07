@@ -3,8 +3,7 @@
 import os
 import sys
 
-pkgdatadir = '@pkgdatadir@'
-moduledir  = '@moduledir@'
+pkgdatadir = '@PKGDATADIR@'
 
 sys.path.insert(1, pkgdatadir)
 
