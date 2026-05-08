@@ -5,30 +5,34 @@
   <project_license>GPL-3.0-or-later</project_license>
 
   <name>Banter</name>
-  <summary>GroupMe client for GNOME</summary>
+  <summary>Unofficial GroupMe client for GNOME</summary>
 
   <description>
     <p>
-      Banter is an unofficial GTK4 / libadwaita client for GroupMe. It is
-      not affiliated with or endorsed by GroupMe or Microsoft; the app
-      talks to GroupMe's public REST and WebSocket APIs the same way the
-      official web client does, with an OAuth sign-in flow that never
-      stores a password.
+      Banter is an <em>unofficial</em> client for GroupMe using GTK4 / libadwaita
+      to be usable on Linux desktops or mobile devices.
     </p>
     <p>
-      Conversations live in a single adaptive sidebar — groups and direct
-      messages mixed together, sorted by recent activity. Messages stream
-      in via WebSocket push, drafts persist across chat switches, and the
-      UI follows the system colour scheme with a layout that collapses
+      It is not affiliated with or endorsed by GroupMe or Microsoft in any
+      way. The app talks to GroupMe's public REST and WebSocket APIs the
+      same way the official web client does, with an OAuth sign-in flow
+      that never stores a password.
+    </p>
+    <p>
+      Mirroring the official clients, conversations live in a single sidebar
+      with groups and DMs mixed together, sorted by recent activity. Messages
+      stream in via WebSocket push, drafts persist across chat switches, and
+      the UI follows the system colour scheme with a layout that collapses
       cleanly to phone widths.
     </p>
     <ul>
       <li>Real-time messaging via WebSocket push</li>
+      <li>Create and edit groups and start direct messages with group members</li>
       <li>Emoji reactions, polls, @-mentions, edit / delete, and in-chat search</li>
       <li>Image, video, voice, and file attachments with inline playback</li>
       <li>Group gallery with albums and member management</li>
-      <li>OAuth sign-in via the system browser; tokens stored in libsecret</li>
-      <li>Adaptive layout — desktop, Phosh phones, Raspberry Pi 5</li>
+      <li>OAuth sign-in via the system browser</li>
+      <li>Adaptive layout that works for desktop GNOME or phones running Phosh</li>
     </ul>
   </description>
 
@@ -76,13 +80,16 @@
         <p>First public release. Highlights:</p>
         <ul>
           <li>Real-time group chats and direct messages, unified in one sidebar</li>
+          <li>Create and edit groups and start direct messages with group members</li>
           <li>Compose with @-mention autocomplete, drafts, and quote-reply</li>
-          <li>Emoji reactions, polls, edit / delete, and in-chat search</li>
-          <li>Image, video, voice, and file attachments — videos play inline</li>
-          <li>Group gallery with albums; member, settings, event, and poll management</li>
-          <li>OAuth sign-in via the system browser, tokens stored in libsecret</li>
+          <li>Emoji reactions, polls, edit or delete messages, and in-chat search</li>
+          <li>Image, video, voice, and file attachments</li>
+          <li>Voice messages and videos play inline</li>
+          <li>Group gallery with albums</li>
+          <li>Group member, settings, event, and poll management</li>
+          <li>OAuth sign-in via the system browser</li>
           <li>Desktop notifications and per-conversation mute</li>
-          <li>Adaptive layout for desktop and Linux phones (FuriOS, Raspberry Pi 5)</li>
+          <li>Adaptive layout that works for desktop GNOME or phones running Phosh</li>
         </ul>
       </description>
     </release>
