@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="land.rob.Banter" path="/land/rob/Banter/">
+  <schema id="land.rob.banter" path="/land/rob/banter/">
 
     <key name="window-width" type="i">
       <default>980</default>

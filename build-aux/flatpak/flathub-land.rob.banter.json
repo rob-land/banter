@@ -1,5 +1,7 @@
 {
-  "app-id": "land.rob.Banter",
+  "_comment": "DRAFT Flathub-side manifest. NOT used by build-all.sh — that picks up land.rob.banter.json next to this file. When submitting to Flathub, copy this file's contents into the flathub/land.rob.banter repo. Keep this in sync with land.rob.banter.json — only the 'banter' module's sources block should differ.",
+
+  "app-id": "land.rob.banter",
   "runtime": "org.gnome.Platform",
   "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
@@ -60,8 +62,10 @@
       "config-opts": [],
       "sources": [
         {
-          "type": "dir",
-          "path": "../.."
+          "type": "git",
+          "url": "https://codeberg.org/robland/banter.git",
+          "tag": "v0.1.0",
+          "commit": "2d0f7222bed0e772b0b5b6b9a94eec10efe830a3"
         }
       ]
     }

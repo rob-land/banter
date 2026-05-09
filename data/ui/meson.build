@@ -16,8 +16,8 @@ blueprints = custom_target('blueprints',
 # needs both the source dir (for style.css) and the build dir (for
 # the generated *.ui files).
 gresource = gnome.compile_resources(
-  'land.rob.Banter',
-  'land.rob.Banter.gresource.xml',
+  'land.rob.banter',
+  'land.rob.banter.gresource.xml',
   gresource_bundle: true,
   install: true,
   install_dir: get_option('datadir') / 'banter',

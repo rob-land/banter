@@ -7,20 +7,28 @@ patterns from day one.
 
 ## Identity
 
-- **App-id namespace**: `land.rob.<Project>` (e.g. `land.rob.Clicker`).
-  Use the same casing in every metadata file. Do not use reverse-DNS
-  forms like `io.github.<user>.<App>`.
+- **App-id namespace**: `land.rob.<project>` — **all lowercase**
+  (e.g. `land.rob.clicker`, `land.rob.tock`). Flathub's submission
+  guidelines treat the app id as case-sensitive and recommend
+  lowercase ASCII for the final component; mixed-case ids like
+  `land.rob.Clicker` cause friction during review even if they
+  technically validate. Use the lowercase form in every metadata
+  file and code path. Do not use reverse-DNS forms like
+  `io.github.<user>.<App>`.
 - **Project name** in lowercase: `clicker`, `finlit`, etc. — used as
-  the Python package name, the launcher script name, and the systemd /
-  Flatpak `command:` value.
+  the Python package name, the launcher script name, the systemd /
+  Flatpak `command:` value, AND the app id's final component (so the
+  app id and project name share the same casing).
 - **License**: GPL-3.0-or-later, filename `COPYING` (not `LICENSE`).
 - **Class prefix**: `<Project>Window`, `<Project>Application`,
-  `<Project>SomePage`. Avoid bare `MainWindow`. Set
-  `__gtype_name__ = "<Project><ClassName>"` on every `Gtk.Template`d
-  class and on widgets exposed to GResource lookups.
-- **GResource prefix**: `/land/rob/<Project>/...`.
-- **GSettings schema id**: `land.rob.<Project>` (file:
-  `data/land.rob.<Project>.gschema.xml`).
+  `<Project>SomePage` (capitalised, since these are Python class
+  names — only the *app id* is lowercase). Avoid bare `MainWindow`.
+  Set `__gtype_name__ = "<Project><ClassName>"` on every
+  `Gtk.Template`d class and on widgets exposed to GResource lookups.
+- **GResource prefix**: `/land/rob/<project>/...` (matches the
+  lowercase app id).
+- **GSettings schema id**: `land.rob.<project>` (file:
+  `data/land.rob.<project>.gschema.xml`).
 
 ## Source layout
 
@@ -36,17 +44,17 @@ patterns from day one.
 ├── fix-flatpak-deps.py             # tarball -> wheel patcher
 ├── build-aux/
 │   └── flatpak/
-│       ├── land.rob.<Project>.json # Flatpak manifest (JSON, not YAML)
+│       ├── land.rob.<project>.json # Flatpak manifest (JSON, not YAML)
 │       └── python3-deps.json       # generated, gitignored
 ├── data/
 │   ├── meson.build
-│   ├── land.rob.<Project>.desktop.in
-│   ├── land.rob.<Project>.metainfo.xml.in
-│   ├── land.rob.<Project>.gschema.xml
+│   ├── land.rob.<project>.desktop.in
+│   ├── land.rob.<project>.metainfo.xml.in
+│   ├── land.rob.<project>.gschema.xml
 │   ├── icons/hicolor/{scalable,symbolic}/apps/...svg
 │   └── ui/
 │       ├── meson.build             # blueprint-compiler + gresource
-│       ├── land.rob.<Project>.gresource.xml
+│       ├── land.rob.<project>.gresource.xml
 │       └── *.blp                   # one per template
 ├── po/
 │   ├── LINGUAS
@@ -83,7 +91,7 @@ features (e.g. `devices/`, `discovery/`, `pages/`, `widgets/`,
   gnome  = import('gnome')
   python = import('python').find_installation('python3')
 
-  application_id = 'land.rob.<Project>'
+  application_id = 'land.rob.<project>'
   prefix     = get_option('prefix')
   bindir     = prefix / get_option('bindir')
   datadir    = prefix / get_option('datadir')
@@ -171,13 +179,13 @@ features (e.g. `devices/`, `discovery/`, `pages/`, `widgets/`,
   }
   ```
 - The gresource.xml lists files by their build-tree name (no `ui/`
-  prefix) and aliases them under `/land/rob/<Project>/ui/...` so
-  `Gtk.Template(resource_path='/land/rob/<Project>/ui/foo.ui')`
+  prefix) and aliases them under `/land/rob/<project>/ui/...` so
+  `Gtk.Template(resource_path='/land/rob/<project>/ui/foo.ui')`
   works in Python.
 
 ## Flatpak
 
-- Manifest at `build-aux/flatpak/land.rob.<Project>.json` (JSON, not
+- Manifest at `build-aux/flatpak/land.rob.<project>.json` (JSON, not
   YAML).
 - Runtime: `org.gnome.Platform//50` + SDK. Bump in lockstep across
   projects when GNOME advances.

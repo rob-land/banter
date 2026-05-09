@@ -9,7 +9,7 @@ i18n   = import('i18n')
 gnome  = import('gnome')
 python = import('python').find_installation('python3')
 
-application_id = 'land.rob.Banter'
+application_id = 'land.rob.banter'
 prefix     = get_option('prefix')
 bindir     = prefix / get_option('bindir')
 datadir    = prefix / get_option('datadir')

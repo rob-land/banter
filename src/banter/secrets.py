@@ -35,7 +35,7 @@ def _schema():
     if _SCHEMA is not None or not _AVAILABLE:
         return _SCHEMA
     _SCHEMA = Secret.Schema.new(
-        "land.rob.Banter.Token",
+        "land.rob.banter.Token",
         Secret.SchemaFlags.NONE,
         {"user_id": Secret.SchemaAttributeType.STRING},
     )

@@ -47,7 +47,7 @@ class NotificationDispatcher:
                 return
             notif = Gio.Notification.new(title)
             notif.set_body(body[:200])
-            notif.set_icon(Gio.ThemedIcon.new("land.rob.Banter"))
+            notif.set_icon(Gio.ThemedIcon.new("land.rob.banter"))
             notif.set_priority(Gio.NotificationPriority.HIGH)
             notif.set_default_action("app.activate")
             for label, detailed in (buttons or ()):

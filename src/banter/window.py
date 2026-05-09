@@ -28,7 +28,7 @@ from .dialogs.profile import EditProfileDialog
 from .dialogs.jump_to_date import JumpToDateDialog
 
 
-@Gtk.Template(resource_path="/land/rob/Banter/ui/window.ui")
+@Gtk.Template(resource_path="/land/rob/banter/ui/window.ui")
 class BanterWindow(Adw.ApplicationWindow):
     __gtype_name__ = "BanterWindow"
 

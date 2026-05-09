@@ -134,7 +134,7 @@ class BanterApplication(Adw.Application):
 
     def _load_css(self):
         css = Gtk.CssProvider()
-        css.load_from_resource('/land/rob/Banter/ui/style.css')
+        css.load_from_resource('/land/rob/banter/ui/style.css')
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(),
             css,
@@ -159,7 +159,7 @@ class BanterApplication(Adw.Application):
         about.present(self._window)
 
     def _show_shortcuts(self, *_):
-        builder = Gtk.Builder.new_from_resource('/land/rob/Banter/ui/help-overlay.ui')
+        builder = Gtk.Builder.new_from_resource('/land/rob/banter/ui/help-overlay.ui')
         win = builder.get_object("help_overlay")
         if self._window:
             win.set_transient_for(self._window)

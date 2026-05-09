@@ -3,17 +3,17 @@
 Two manifests live here. Keep them in sync — they should differ only in
 the `banter` module's `sources` block.
 
-## `land.rob.Banter.json`
+## `land.rob.banter.json`
 
 The development manifest. `build-all.sh` and local `flatpak-builder`
 runs use this one. Its `banter` module points at `path: "../.."` so it
 builds from the working tree without needing a tag or push.
 
-## `flathub-land.rob.Banter.json`
+## `flathub-land.rob.banter.json`
 
 The Flathub-side manifest. **Not used by `build-all.sh`.** When
 submitting to Flathub, copy this file's contents into the
-`flathub/land.rob.Banter` repository (after the submission PR is
+`flathub/land.rob.banter` repository (after the submission PR is
 accepted). It pins to a git tag + commit so Flathub's builders pull
 exactly the released source.
 
@@ -29,9 +29,9 @@ A quick drift check:
 ```sh
 diff -u \
   <(jq 'del(.modules[] | select(.name=="banter") | .sources)' \
-       build-aux/flatpak/land.rob.Banter.json) \
+       build-aux/flatpak/land.rob.banter.json) \
   <(jq '. as $root | del($root._comment) | del(.modules[] | select(.name=="banter") | .sources)' \
-       build-aux/flatpak/flathub-land.rob.Banter.json)
+       build-aux/flatpak/flathub-land.rob.banter.json)
 ```
 
 That strips both manifests down to "everything except the `banter`

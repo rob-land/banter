@@ -5,7 +5,7 @@ from datetime import date as _date, datetime
 from gi.repository import Gtk, Adw
 
 
-@Gtk.Template(resource_path="/land/rob/Banter/ui/jump-to-date-dialog.ui")
+@Gtk.Template(resource_path="/land/rob/banter/ui/jump-to-date-dialog.ui")
 class JumpToDateDialog(Adw.Dialog):
     __gtype_name__ = "JumpToDateDialog"
 

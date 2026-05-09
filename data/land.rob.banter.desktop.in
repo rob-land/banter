@@ -2,7 +2,7 @@
 Name=Banter
 Comment=GroupMe client for GNOME
 Exec=banter
-Icon=land.rob.Banter
+Icon=land.rob.banter
 Terminal=false
 Type=Application
 Categories=Network;InstantMessaging;

@@ -41,8 +41,8 @@ jobs:
     if: github.server_url == 'https://git.rob.land'
 
     env:
-      APP_ID: land.rob.Banter
-      MANIFEST: build-aux/flatpak/land.rob.Banter.json
+      APP_ID: land.rob.banter
+      MANIFEST: build-aux/flatpak/land.rob.banter.json
       RUNTIME_VERSION: "50"
       LOCAL_REPO: /tmp/local-repo
 

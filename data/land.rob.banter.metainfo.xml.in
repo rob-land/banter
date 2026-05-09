@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>land.rob.Banter</id>
+  <id>land.rob.banter</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
 
@@ -36,7 +36,7 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">land.rob.Banter.desktop</launchable>
+  <launchable type="desktop-id">land.rob.banter.desktop</launchable>
 
   <screenshots>
     <screenshot type="default">

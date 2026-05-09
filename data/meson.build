@@ -2,8 +2,8 @@ i18n    = import('i18n')
 datadir = get_option('prefix') / get_option('datadir')
 
 desktop_file = i18n.merge_file(
-  input:       'land.rob.Banter.desktop.in',
-  output:      'land.rob.Banter.desktop',
+  input:       'land.rob.banter.desktop.in',
+  output:      'land.rob.banter.desktop',
   type:        'desktop',
   po_dir:      '../po',
   install:     true,
@@ -11,15 +11,15 @@ desktop_file = i18n.merge_file(
 )
 
 metainfo_file = i18n.merge_file(
-  input:       'land.rob.Banter.metainfo.xml.in',
-  output:      'land.rob.Banter.metainfo.xml',
+  input:       'land.rob.banter.metainfo.xml.in',
+  output:      'land.rob.banter.metainfo.xml',
   po_dir:      '../po',
   install:     true,
   install_dir: datadir / 'metainfo',
 )
 
 install_data(
-  'land.rob.Banter.gschema.xml',
+  'land.rob.banter.gschema.xml',
   install_dir: datadir / 'glib-2.0' / 'schemas',
 )
 
@@ -29,12 +29,12 @@ install_data(
 )
 
 install_data(
-  'icons/hicolor/scalable/apps/land.rob.Banter.svg',
+  'icons/hicolor/scalable/apps/land.rob.banter.svg',
   install_dir: datadir / 'icons' / 'hicolor' / 'scalable' / 'apps',
 )
 
 install_data(
-  'icons/hicolor/symbolic/apps/land.rob.Banter-symbolic.svg',
+  'icons/hicolor/symbolic/apps/land.rob.banter-symbolic.svg',
   install_dir: datadir / 'icons' / 'hicolor' / 'symbolic' / 'apps',
 )
 
@@ -50,6 +50,6 @@ install_data(
 )
 
 # UI templates (.blp -> .ui) + CSS bundled into a GResource at
-# share/banter/land.rob.Banter.gresource. The launcher loads it before
+# share/banter/land.rob.banter.gresource. The launcher loads it before
 # any @Gtk.Template-decorated class is imported.
 subdir('ui')

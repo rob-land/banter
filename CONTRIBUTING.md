@@ -49,10 +49,10 @@ flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.f
 flatpak install flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
 # Build and install locally
-flatpak-builder --install --user --force-clean _flatpak build-aux/flatpak/land.rob.Banter.json
+flatpak-builder --install --user --force-clean _flatpak build-aux/flatpak/land.rob.banter.json
 
 # Run
-flatpak run land.rob.Banter
+flatpak run land.rob.banter
 ```
 
 ## Project structure

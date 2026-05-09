@@ -135,9 +135,9 @@ flatpak install flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
 ```bash
 flatpak-builder --install --user --force-clean \
-  _flatpak build-aux/flatpak/land.rob.Banter.json
+  _flatpak build-aux/flatpak/land.rob.banter.json
 
-flatpak run land.rob.Banter
+flatpak run land.rob.banter
 ```
 
 ---
@@ -169,7 +169,7 @@ flatpak install flathub --arch=aarch64 \
 
 ```bash
 flatpak-builder --arch=aarch64 --install --user --force-clean \
-  _flatpak-aarch64 build-aux/flatpak/land.rob.Banter.json
+  _flatpak-aarch64 build-aux/flatpak/land.rob.banter.json
 ```
 
 ### Export a redistributable bundle
@@ -177,11 +177,11 @@ flatpak-builder --arch=aarch64 --install --user --force-clean \
 ```bash
 # Build into a local repo
 flatpak-builder --arch=aarch64 --repo=repo --force-clean \
-  _flatpak-aarch64 build-aux/flatpak/land.rob.Banter.json
+  _flatpak-aarch64 build-aux/flatpak/land.rob.banter.json
 
 # Export a single-file bundle you can sideload onto the device
 flatpak build-bundle repo --arch=aarch64 \
-  banter-aarch64.flatpak land.rob.Banter
+  banter-aarch64.flatpak land.rob.banter
 ```
 
 Transfer `banter-aarch64.flatpak` to the device and install:
@@ -224,15 +224,15 @@ Inside a Flatpak build, add it to the manifest as a pip module.
 ```
 banter/
 ├── meson.build                  Root build file
-├── build-aux/flatpak/land.rob.Banter.json         Flatpak manifest
+├── build-aux/flatpak/land.rob.banter.json         Flatpak manifest
 ├── data/
-│   ├── land.rob.Banter.desktop.in
-│   ├── land.rob.Banter.metainfo.xml.in
-│   ├── land.rob.Banter.gschema.xml
+│   ├── land.rob.banter.desktop.in
+│   ├── land.rob.banter.metainfo.xml.in
+│   ├── land.rob.banter.gschema.xml
 │   └── icons/
 │       └── hicolor/
-│           ├── scalable/apps/land.rob.Banter.svg
-│           └── symbolic/apps/land.rob.Banter-symbolic.svg
+│           ├── scalable/apps/land.rob.banter.svg
+│           └── symbolic/apps/land.rob.banter-symbolic.svg
 ├── po/                          Translations (none yet)
 └── src/
     ├── main.py                  Entry point invoked by the launcher script
