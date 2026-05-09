@@ -8,6 +8,12 @@ on:
 
 jobs:
   build-and-test:
+    # Codeberg-only: the selfhosted runner at git.rob.land doesn't
+    # expose a `codeberg-small` label, and over there the meson
+    # test step runs inside the Publish Flatpak workflow as part
+    # of flatpak-builder. Skipped here to avoid queuing forever
+    # on the wrong runner pool.
+    if: gitea.server_url == 'https://codeberg.org'
     runs-on: codeberg-small
     container:
       image: catthehacker/ubuntu:act-latest
