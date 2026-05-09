@@ -34,7 +34,11 @@ jobs:
     # workflow file ends up on Codeberg via the `origin` remote;
     # without this guard it would queue indefinitely against
     # codeberg-{tiny,small,medium} runners.
-    if: gitea.server_url == 'https://git.rob.land'
+    #
+    # NB: forgejo-runner v12 only exposes the github.* compat
+    # namespace in `if:` expressions; `gitea.server_url` parses on
+    # the server but the runner's schema validator rejects it.
+    if: github.server_url == 'https://git.rob.land'
 
     env:
       APP_ID: land.rob.Banter
