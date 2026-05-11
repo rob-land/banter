@@ -39,6 +39,12 @@ jobs:
     # namespace in `if:` expressions; `gitea.server_url` parses on
     # the server but the runner's schema validator rejects it.
     if: startsWith(github.server_url, 'https://git.rob.land')
+    container:
+      image: ghcr.io/catthehacker/ubuntu:act-latest
+      # Persistent cross-job flatpak runtime cache. First run populates;
+      # subsequent runs treat `flatpak install` as a near-no-op.
+      volumes:
+        - /var/lib/docker/runtime-cache:/root/.local/share/flatpak
 
     env:
       APP_ID: land.rob.banter
