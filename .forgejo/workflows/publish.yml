@@ -61,7 +61,8 @@ jobs:
           apt-get install -y --no-install-recommends \
             flatpak flatpak-builder \
             qemu-user-static binfmt-support \
-            rsync openssh-client gnupg2 ca-certificates
+            rsync openssh-client gnupg2 ca-certificates \
+            elfutils
 
       - name: Add flathub remote
         run: |
