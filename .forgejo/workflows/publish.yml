@@ -29,7 +29,7 @@ on:
 
 jobs:
   publish:
-    runs-on: flatpak
+    runs-on: ubuntu-latest
     # Selfhosted Forgejo is the only place this should run. The same
     # workflow file ends up on Codeberg via the `origin` remote;
     # without this guard it would queue indefinitely against
@@ -38,7 +38,7 @@ jobs:
     # NB: forgejo-runner v12 only exposes the github.* compat
     # namespace in `if:` expressions; `gitea.server_url` parses on
     # the server but the runner's schema validator rejects it.
-    if: github.server_url == 'https://git.rob.land'
+    if: startsWith(github.server_url, 'https://git.rob.land')
 
     env:
       APP_ID: land.rob.banter

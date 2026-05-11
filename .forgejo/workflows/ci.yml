@@ -15,7 +15,7 @@ jobs:
     # on the wrong runner pool. (`github.server_url` is the
     # github-compat alias; forgejo-runner v12's schema validator
     # rejects `gitea.*` in `if:` expressions.)
-    if: github.server_url == 'https://codeberg.org'
+    if: startsWith(github.server_url, 'https://codeberg.org')
     runs-on: codeberg-small
     container:
       image: catthehacker/ubuntu:act-latest
