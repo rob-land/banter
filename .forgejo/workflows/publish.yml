@@ -45,7 +45,6 @@ jobs:
       # subsequent runs treat `flatpak install` as a near-no-op.
       volumes:
         - /var/lib/docker/runtime-cache:/root/.local/share/flatpak
-        - /proc/sys/fs/binfmt_misc:/proc/sys/fs/binfmt_misc
 
     env:
       APP_ID: land.rob.banter
@@ -98,14 +97,15 @@ jobs:
 
       - name: Register qemu binfmt for cross-arch builds
         run: |
-          # tonistiigi/binfmt is the canonical way to register all
-          # qemu interpreters at once. Falls back to update-binfmts
-          # if Docker isn't reachable from this runner.
-          if command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
-            docker run --privileged --rm tonistiigi/binfmt --install all
-          else
-            /usr/sbin/update-binfmts --enable || true
-          fi
+          # Mount binfmt_misc filesystem inside this container's mount ns
+          # then register qemu-user-static handlers. Container is privileged
+          # so this is allowed. Without this, aarch64 execvp returns "Exec
+          # format error" even though qemu-user-static is installed.
+          mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+          /usr/sbin/update-binfmts --enable qemu-aarch64 || true
+          /usr/sbin/update-binfmts --enable qemu-arm || true
+          # Verify
+          ls /proc/sys/fs/binfmt_misc/ | head -5
 
       - name: Install GNOME runtime + SDK for both arches
         run: |
