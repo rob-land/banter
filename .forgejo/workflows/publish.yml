@@ -84,24 +84,22 @@ jobs:
 
       - name: Import GPG signing key
         env:
-          GPG_PRIVATE_KEY_B64: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
         run: |
           mkdir -p "$HOME/.gnupg" && chmod 700 "$HOME/.gnupg"
-          echo "secret length: ${#GPG_PRIVATE_KEY_B64}"
-          printf '%s' "$GPG_PRIVATE_KEY_B64" | base64 -d > /tmp/k.asc
-          echo "decoded bytes: $(wc -c </tmp/k.asc)"
-          head -1 /tmp/k.asc
+          printf '%s' "$GPG_PRIVATE_KEY" > /tmp/k.asc
+          echo "key bytes: $(wc -c </tmp/k.asc), first line: $(head -1 /tmp/k.asc)"
           gpg --batch --import /tmp/k.asc
           rm /tmp/k.asc
           gpg --list-secret-keys
 
       - name: Set up SSH for the deploy account
         env:
-          SSH_PRIVATE_KEY_B64: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          KNOWN_HOSTS:        ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS:    ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
-          printf '%s' "$SSH_PRIVATE_KEY_B64" | base64 -d > "$HOME/.ssh/id_ed25519"
+          printf '%s' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 600 "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 644 "$HOME/.ssh/known_hosts"
