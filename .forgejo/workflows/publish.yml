@@ -40,7 +40,7 @@ jobs:
     # the server but the runner's schema validator rejects it.
     if: startsWith(github.server_url, 'https://git.rob.land')
     container:
-      image: ghcr.io/catthehacker/ubuntu:act-latest
+      image: flatpak-builder-base:gnome50
       # Persistent cross-job flatpak runtime cache. First run populates;
       # subsequent runs treat `flatpak install` as a near-no-op.
       volumes:
@@ -55,14 +55,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build prerequisites
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            flatpak flatpak-builder \
-            qemu-user-static binfmt-support \
-            rsync openssh-client gnupg2 ca-certificates \
-            elfutils
 
       - name: Add flathub remote
         run: |
