@@ -57,30 +57,10 @@ jobs:
             qemu-user-static binfmt-support \
             rsync openssh-client gnupg2 ca-certificates
 
-      - name: Register qemu binfmt for cross-arch builds
-        run: |
-          # tonistiigi/binfmt is the canonical way to register all
-          # qemu interpreters at once. Falls back to update-binfmts
-          # if Docker isn't reachable from this runner.
-          if command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
-            docker run --privileged --rm tonistiigi/binfmt --install all
-          else
-            /usr/sbin/update-binfmts --enable || true
-          fi
-
       - name: Add flathub remote
         run: |
           flatpak remote-add --if-not-exists --user flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
-
-      - name: Install GNOME runtime + SDK for both arches
-        run: |
-          flatpak install --user --noninteractive --arch=x86_64 flathub \
-            org.gnome.Platform//${RUNTIME_VERSION} \
-            org.gnome.Sdk//${RUNTIME_VERSION}
-          flatpak install --user --noninteractive --arch=aarch64 flathub \
-            org.gnome.Platform//${RUNTIME_VERSION} \
-            org.gnome.Sdk//${RUNTIME_VERSION}
 
       - name: Import GPG signing key
         env:
@@ -115,6 +95,26 @@ jobs:
             echo "::notice::No remote repo state found — initialising a fresh archive repo locally"
             ostree --repo="$LOCAL_REPO" init --mode=archive
           fi
+
+      - name: Register qemu binfmt for cross-arch builds
+        run: |
+          # tonistiigi/binfmt is the canonical way to register all
+          # qemu interpreters at once. Falls back to update-binfmts
+          # if Docker isn't reachable from this runner.
+          if command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
+            docker run --privileged --rm tonistiigi/binfmt --install all
+          else
+            /usr/sbin/update-binfmts --enable || true
+          fi
+
+      - name: Install GNOME runtime + SDK for both arches
+        run: |
+          flatpak install --user --noninteractive --arch=x86_64 flathub \
+            org.gnome.Platform//${RUNTIME_VERSION} \
+            org.gnome.Sdk//${RUNTIME_VERSION}
+          flatpak install --user --noninteractive --arch=aarch64 flathub \
+            org.gnome.Platform//${RUNTIME_VERSION} \
+            org.gnome.Sdk//${RUNTIME_VERSION}
 
       - name: Build flatpak (x86_64)
         run: |
