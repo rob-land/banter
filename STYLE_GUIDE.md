@@ -213,6 +213,52 @@ features (e.g. `devices/`, `discovery/`, `pages/`, `widgets/`,
 Keep it identical across projects so the user has muscle memory for
 `./build-all.sh --arch aarch64 --install`.
 
+## CI: two-server (Codeberg + selfhost) layout
+
+Cohort projects often live on both Codeberg (public mirror) and
+the self-hosted Forgejo at `git.rob.land` (private build target
+that publishes to `flatpak.rob.land`). The same workflow files
+end up on both servers, but their runner pools have no labels in
+common.
+
+Conventions:
+
+- `.forgejo/workflows/ci.yml` runs the test gate on Codeberg.
+  - `runs-on: codeberg-small` (matches Codeberg's shared runner).
+  - `if: startsWith(github.server_url, 'https://codeberg.org')`
+    guards the body. The startsWith form is forgiving of trailing
+    slashes / reverse-proxy URL variants.
+- `.forgejo/workflows/publish.yml` builds + signs flatpaks and
+  rsyncs to `flatpak.rob.land` on the self-hosted Forgejo.
+  - `runs-on: ubuntu-latest` (matches the self-hosted runner's
+    `ubuntu-latest` label; the `flatpak` label was originally
+    intended for this but the cohort settled on `ubuntu-latest`
+    so the standard apt-installable toolchain works).
+  - `if: startsWith(github.server_url, 'https://git.rob.land')`.
+
+Forgejo-runner v12 quirks to know:
+
+- `runs-on:` is evaluated **before** `if:` at dispatch time, so a
+  job whose `runs-on:` label doesn't exist on the current server
+  queues forever even when the `if:` would skip it. Mitigation:
+  disable the irrelevant workflow per-repo (Settings → Actions →
+  individual workflow → Disable) on the wrong server, OR add the
+  missing label to the runner so it can claim and skip.
+- The runner's strict schema validator rejects `gitea.*`
+  variable accesses in `if:` expressions, even though the server
+  evaluates them fine. Use `github.server_url` — Forgejo exposes
+  it as the GitHub-compat alias on every event payload.
+
+Required secrets on the self-hosted Forgejo for `publish.yml`:
+
+| Secret | Value |
+|---|---|
+| `FLATPAK_GPG_PRIVATE_KEY` | base64 of `gpg --export-secret-keys --armor <KEY>` |
+| `FLATPAK_GPG_KEY_ID` | the signing key id (matches `.flatpakrepo`'s public key) |
+| `DEPLOY_SSH_PRIVATE_KEY` | base64 of an ssh key on the deploy account's `authorized_keys` |
+| `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <flatpak-repo-host>` output |
+| `DEPLOY_TARGET` | `flatpak@host:/path/to/repo` (rsync target) |
+
 ## Async work
 
 - One asyncio loop on a daemon thread (`async_loop.py`) shared by all
