@@ -97,15 +97,16 @@ jobs:
 
       - name: Register qemu binfmt for cross-arch builds
         run: |
-          # Mount binfmt_misc filesystem inside this container's mount ns
-          # then register qemu-user-static handlers. Container is privileged
-          # so this is allowed. Without this, aarch64 execvp returns "Exec
-          # format error" even though qemu-user-static is installed.
+          # Mount this container's own binfmt_misc filesystem then write
+          # qemu-aarch64 registration directly to /register. The `F` flag
+          # is "fix-binary" — kernel reads qemu-aarch64-static once into
+          # its own memory so the registration survives bind-mount churn.
           mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
-          /usr/sbin/update-binfmts --enable qemu-aarch64 || true
-          /usr/sbin/update-binfmts --enable qemu-arm || true
-          # Verify
-          ls /proc/sys/fs/binfmt_misc/ | head -5
+          if ! grep -q '^enabled' /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null; then
+            printf '%s\n' ':qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\xfc\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-aarch64-static:OCF' > /proc/sys/fs/binfmt_misc/register
+          fi
+          echo "binfmt entries: $(ls /proc/sys/fs/binfmt_misc/)"
+          grep -h '^enabled\|^interpreter' /proc/sys/fs/binfmt_misc/qemu-aarch64 || true
 
       - name: Install GNOME runtime + SDK for both arches
         run: |
