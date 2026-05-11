@@ -124,12 +124,12 @@ jobs:
 
       - name: Build flatpak (x86_64)
         run: |
-          flatpak-builder --user --arch=x86_64 --force-clean \
+          flatpak-builder --user --arch=x86_64 --force-clean --disable-rofiles-fuse \
             _flatpak_x86_64 "$MANIFEST"
 
       - name: Build flatpak (aarch64)
         run: |
-          flatpak-builder --user --arch=aarch64 --force-clean \
+          flatpak-builder --user --arch=aarch64 --force-clean --disable-rofiles-fuse \
             _flatpak_aarch64 "$MANIFEST"
 
       - name: Export both arches into the local repo, signed
