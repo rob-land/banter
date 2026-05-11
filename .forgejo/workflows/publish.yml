@@ -45,6 +45,7 @@ jobs:
       # subsequent runs treat `flatpak install` as a near-no-op.
       volumes:
         - /var/lib/docker/runtime-cache:/root/.local/share/flatpak
+        - /proc/sys/fs/binfmt_misc:/proc/sys/fs/binfmt_misc
 
     env:
       APP_ID: land.rob.banter
