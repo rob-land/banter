@@ -6,6 +6,7 @@ from pathlib import Path
 
 from gi.repository import Gtk, Adw, Gdk, Gio, GLib
 
+from .async_utils import BackgroundRunner
 from .config import Config
 from .constants import APP_ID, APP_NAME, APP_VERSION, BACKGROUND, CONFIG_DIR, CACHE_DIR
 from .logging_setup import configure_logging
@@ -21,11 +22,14 @@ class BanterApplication(Adw.Application):
         self._background = background
         self._window     = None
         self._notifier   = None
+        self.runner: BackgroundRunner | None = None
 
     def do_startup(self):
         """Register the app on the session D-Bus (required for notifications)
         and wire up the 'activate' action used by notification default-action."""
         Adw.Application.do_startup(self)
+
+        self.runner = BackgroundRunner(name="banter-bg")
 
         activate_action = Gio.SimpleAction.new("activate", None)
         activate_action.connect("activate", lambda *_: self._bring_to_front())
@@ -63,6 +67,12 @@ class BanterApplication(Adw.Application):
         # window gets built on demand (and the headless notifier shut
         # down) the same way an explicit launch would.
         self.do_activate()
+
+    def do_shutdown(self):
+        if self.runner is not None:
+            self.runner.stop()
+            self.runner = None
+        Adw.Application.do_shutdown(self)
 
     def _on_call_join(self, _action, param):
         """Handler for the `app.call-join` notification button. Re-uses

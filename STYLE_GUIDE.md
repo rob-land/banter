@@ -261,10 +261,39 @@ Required secrets on the self-hosted Forgejo for `publish.yml`:
 
 ## Async work
 
-- One asyncio loop on a daemon thread (`async_loop.py`) shared by all
-  network code. Marshal results back with `GLib.idle_add`. Don't sleep
-  or block the GTK main loop. Don't spawn ad-hoc threads when the
-  shared loop will do.
+Pick one of two patterns based on what else needs to run async:
+
+- **asyncio with a worker thread.** Required when you use
+  `aiohttp`, `bleak`, `dbus-next`, `websockets`, or any other
+  asyncio-native library. Implement an `AsyncRunner` class (or a
+  domain-specific subclass like `BleManager`): one asyncio loop on a
+  daemon thread, **owned by the Application instance** (`self.runner
+  = AsyncRunner()` in `do_startup`, `self.runner.stop()` in
+  `do_shutdown`). Submit coroutines with `runner.submit(coro)` or
+  `runner.run_async(coro, on_result=…, on_error=…)`; the runner
+  marshals results back via `GLib.idle_add`. **The trap:**
+  `asyncio.set_event_loop(loop)` must run on the worker thread before
+  `run_forever()`, or `run_coroutine_threadsafe` fails silently. The
+  class lives in `async_loop.py`; for backward compatibility a small
+  set of module-level shims (`run_async(coro, …)`, `call_on_main(fn)`)
+  may delegate to `Adw.Application.get_default().runner`.
+- **Soup3 (GLib-native HTTP).** Use
+  `Soup.Session.send_and_read_async` for HTTP and
+  `Soup.WebsocketConnection` for WebSockets. No worker thread;
+  callbacks fire on the main loop directly. Strictly simpler when
+  HTTP is the only async need — no asyncio↔GLib marshalling, no
+  thread to start or stop. Pick this when nothing in your
+  dependencies pulls in asyncio.
+
+For sync-only blocking work (image decoding, libsecret access, file
+hashing — things with no asyncio API), an instance-owned
+`BackgroundRunner` backed by `concurrent.futures.ThreadPoolExecutor`
+is the right tool. Banter uses this; the executor is reused across
+calls instead of spawning a fresh thread each time.
+
+Don't sleep or block the GTK main loop. Don't call `requests` /
+`urllib` / `time.sleep` on the main thread. Don't spawn ad-hoc
+threads when the shared runner will do.
 
 ## Imports and Python conventions
 
