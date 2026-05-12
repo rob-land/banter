@@ -33,6 +33,7 @@ class MentionPopover(Gtk.Popover):
         self.set_autohide(False)
         self.set_has_arrow(True)
         self._members = sorted(members, key=lambda m: m[0].lower())
+        self._current_filter = ""
 
         scroll = Gtk.ScrolledWindow()
         scroll.set_min_content_width(240)
@@ -54,8 +55,17 @@ class MentionPopover(Gtk.Popover):
 
         self.set_filter("")
 
+    def set_members(self, members):
+        """Swap in a fresh member list. If the popover is visible, the
+        currently-applied filter is re-run against the new list so a
+        member added to the group mid-session shows up immediately."""
+        self._members = sorted(members, key=lambda m: m[0].lower())
+        if self.get_mapped():
+            self.set_filter(self._current_filter)
+
     def set_filter(self, prefix: str):
         """Re-populate the list with members matching `prefix` (case-insensitive)."""
+        self._current_filter = prefix
         prefix_low = prefix.lower()
         # Clear existing rows
         while True:

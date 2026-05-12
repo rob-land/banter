@@ -1225,6 +1225,28 @@ class ChatView(Gtk.Box):
         self._mention_popover.connect(
             "member-selected", self._on_mention_picked)
 
+    def _refresh_mention_members(self):
+        """Re-fetch the group's members from the API and patch the
+        popover's list in place. Bypasses the contacts-tab cache, which
+        is a long-lived snapshot that won't reflect members added after
+        Banter started."""
+        if self._mention_popover is None:
+            return
+        gid = self._gid
+
+        def worker():
+            return self._api.get_group(gid)
+
+        def on_done(full):
+            if not full or not full.get("members"):
+                return
+            if self._mention_popover is None:
+                return
+            self._group = full
+            self._mention_popover.set_members(self._collect_members())
+
+        run_in_background(worker, on_done)
+
     def _collect_members(self) -> list:
         """Return [(display_name, user_id), ...] for the autocomplete,
         excluding the current user. Group-only — DMs never call this."""
@@ -1309,6 +1331,11 @@ class ChatView(Gtk.Box):
 
         self._mention_popover.set_filter("")
         self._mention_popover.popup()
+        # Refresh the member list in the background so users added to
+        # the group since this chat was opened (or since the contacts
+        # tab cached its snapshot) show up. The popover stays usable
+        # against the cached list while the fetch is in flight.
+        self._refresh_mention_members()
 
     def _close_mention_popover(self):
         if self._mention_anchor is not None:
