@@ -5,12 +5,16 @@ import urllib.request
 from datetime import datetime
 from gi.repository import Gtk, Adw, GLib, Gdk, Gio
 
-from ..constants import CACHE_DIR, dbg
+from ..constants import CACHE_DIR
 from ..async_utils import run_in_background
 from ..helpers import (
     load_texture_async, load_audio_async, load_video_async, _cache_key,
 )
 from .base import StandardDialog
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class LoadingRow(Adw.ActionRow):
@@ -482,7 +486,7 @@ class VoiceAttachment(Gtk.Box):
             self._media.play()
             self._play_btn.set_icon_name("media-playback-pause-symbolic")
         except Exception as e:
-            dbg("voice playback init failed: %s", e)
+            log.debug("voice playback init failed: %s", e)
             self._play_btn.set_icon_name("dialog-error-symbolic")
             self._play_btn.set_tooltip_text("Voice playback unavailable")
             self._media = None
@@ -576,7 +580,7 @@ class VoiceAttachment(Gtk.Box):
                     shutil.copy(cached, dest)
                     ok = True
                 except Exception as e:
-                    dbg("voice save: cache-copy failed: %s", e)
+                    log.debug("voice save: cache-copy failed: %s", e)
             if not ok:
                 ok = api.download_audio(url, dest)
             def report():

@@ -9,13 +9,16 @@ from datetime import datetime
 from pathlib import Path
 from gi.repository import Gtk, Adw, GLib, Gdk, Gst
 
-from ..constants import dbg
 from ..async_utils import run_in_background
 from ..api import GroupMeAPI
 from ..helpers import is_hidden_system_message
 from .mention_popover import MentionPopover, EVERYONE_ID
 from .message_bubble import MessageBubble
 from .misc import DateSeparator
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class ChatView(Gtk.Box):
@@ -435,16 +438,16 @@ class ChatView(Gtk.Box):
         DMs fall back to periodic polling since push events don't
         reliably include DM group IDs."""
         if self._is_dm:
-            dbg("ChatView: using polling fallback (DM)")
+            log.debug("ChatView: using polling fallback (DM)")
             self._poll_id = GLib.timeout_add(self._poll_ms, self._poll)
         else:
-            dbg("ChatView: push handled by BanterWindow singleton")
+            log.debug("ChatView: push handled by BanterWindow singleton")
 
     def _on_push_event(self, data: dict):
         """Handle a push event received from GroupMe's Faye server."""
         ev_type = data.get("type", "")
         subject = data.get("subject", {})
-        dbg("push event: type=%s subject_keys=%s", ev_type, list(subject.keys()))
+        log.debug("push event: type=%s subject_keys=%s", ev_type, list(subject.keys()))
 
         if ev_type == "typing":
             # Flat event — same shape on both /group/{gid} and
@@ -490,7 +493,7 @@ class ChatView(Gtk.Box):
                 if msg_id and msg_id in self._bubble_map:
                     # Already displayed (we sent it ourselves or received a duplicate)
                     # — refresh reactions in case server data differs
-                    dbg("push: line.create duplicate ignored for msg %s", msg_id)
+                    log.debug("push: line.create duplicate ignored for msg %s", msg_id)
                     self._bubble_map[msg_id].refresh(subject)
                 else:
                     self._append_new([subject])
@@ -531,7 +534,7 @@ class ChatView(Gtk.Box):
             # Log the raw reaction payload so we can see which pack / emoji
             # the originating client picked — useful for tracking down
             # packs the /powerups catalog doesn't surface.
-            dbg("push: reaction event msg_id=%s group_id=%s gid=%s in_map=%s user_reaction=%s",
+            log.debug("push: reaction event msg_id=%s group_id=%s gid=%s in_map=%s user_reaction=%s",
                 msg_id, group_id, self._gid, msg_id in self._bubble_map,
                 subject.get("user_reaction"))
 
@@ -1177,7 +1180,7 @@ class ChatView(Gtk.Box):
                 upper = max(upper, content_bottom)
 
         # Diagnostic — re-enable when investigating scroll-pin issues:
-        # dbg("pin: seq=%d upper=%.1f page=%.1f value=%.1f",
+        # log.debug("pin: seq=%d upper=%.1f page=%.1f value=%.1f",
         #     seq, upper, adj.get_page_size(), adj.get_value())
 
         self._suppress_scroll_change = True
@@ -1936,7 +1939,7 @@ class ChatView(Gtk.Box):
             if ret == Gst.StateChangeReturn.FAILURE:
                 raise RuntimeError("audio pipeline could not start")
         except Exception as e:
-            dbg("voice record start failed: %s", e)
+            log.debug("voice record start failed: %s", e)
             self._win.toast(f"Recording failed: {e}")
             try: os.unlink(self._record_path)
             except Exception: pass

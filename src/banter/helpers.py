@@ -6,8 +6,12 @@ import urllib.request
 
 from gi.repository import Gtk, Adw, GLib, Gdk, GdkPixbuf
 
-from .constants import CACHE_DIR, APP_VERSION, dbg
+from .constants import CACHE_DIR, APP_VERSION
 from .async_utils import run_in_background
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 # ─────────────────────────── Message helpers ─────────────────────
@@ -95,23 +99,23 @@ def load_image_async(url: str, callback, avatar: bool = False):
         path = CACHE_DIR / f"{key}.img"
         fail = CACHE_DIR / f"{key}.fail"
         if path.exists():
-            dbg("img-cache: hit %s", path.name)
+            log.debug("img-cache: hit %s", path.name)
             GLib.idle_add(callback, str(path))
             return
         if fail.exists():
             # Previously known-bad URL — don't hit the network again.
             GLib.idle_add(callback, None)
             return
-        dbg("img-fetch: %s", url)
+        log.debug("img-fetch: %s", url)
         try:
             req = urllib.request.Request(url)
             req.add_header("User-Agent", f"GroupMe-GNOME/{APP_VERSION}")
             with urllib.request.urlopen(req, timeout=15) as r:
                 data = r.read()
                 path.write_bytes(data)
-                dbg("img-fetch: saved %d bytes → %s", len(data), path.name)
+                log.debug("img-fetch: saved %d bytes → %s", len(data), path.name)
         except Exception as e:
-            dbg("img-fetch: failed %s – %s", url, e)
+            log.debug("img-fetch: failed %s – %s", url, e)
             try:
                 fail.write_bytes(b"")
             except Exception:
@@ -149,14 +153,14 @@ def load_texture_async(url: str, max_w: int, max_h: int, callback):
             if fail.exists():
                 GLib.idle_add(callback, None)
                 return
-            dbg("img-fetch: %s", url)
+            log.debug("img-fetch: %s", url)
             try:
                 req = urllib.request.Request(url)
                 req.add_header("User-Agent", f"GroupMe-GNOME/{APP_VERSION}")
                 with urllib.request.urlopen(req, timeout=15) as r:
                     path.write_bytes(r.read())
             except Exception as e:
-                dbg("img-fetch: failed %s – %s", url, e)
+                log.debug("img-fetch: failed %s – %s", url, e)
                 try:
                     fail.write_bytes(b"")
                 except Exception:
@@ -168,7 +172,7 @@ def load_texture_async(url: str, max_w: int, max_h: int, callback):
                 str(path), max_w, max_h, True)
             texture = Gdk.Texture.new_for_pixbuf(pixbuf)
         except Exception as e:
-            dbg("load_texture: decode failed for %s: %s", path, e)
+            log.debug("load_texture: decode failed for %s: %s", path, e)
             GLib.idle_add(callback, None)
             return
         GLib.idle_add(callback, texture)
@@ -198,13 +202,13 @@ def load_video_async(url: str, callback):
         path = CACHE_DIR / f"{key}.video"
         fail = CACHE_DIR / f"{key}.video.fail"
         if path.exists():
-            dbg("video-cache: hit %s", path.name)
+            log.debug("video-cache: hit %s", path.name)
             GLib.idle_add(callback, str(path))
             return
         if fail.exists():
             GLib.idle_add(callback, None)
             return
-        dbg("video-fetch: %s", url)
+        log.debug("video-fetch: %s", url)
         try:
             req = urllib.request.Request(url)
             req.add_header("User-Agent", f"GroupMe-GNOME/{APP_VERSION}")
@@ -216,7 +220,7 @@ def load_video_async(url: str, callback):
                         break
                     out.write(chunk)
         except Exception as e:
-            dbg("video-fetch: failed %s – %s", url, e)
+            log.debug("video-fetch: failed %s – %s", url, e)
             try:
                 if path.exists():
                     path.unlink()
@@ -246,13 +250,13 @@ def load_audio_async(api, url: str, callback):
         path = CACHE_DIR / f"{key}.audio"
         fail = CACHE_DIR / f"{key}.audio.fail"
         if path.exists():
-            dbg("audio-cache: hit %s", path.name)
+            log.debug("audio-cache: hit %s", path.name)
             GLib.idle_add(callback, str(path))
             return
         if fail.exists():
             GLib.idle_add(callback, None)
             return
-        dbg("audio-fetch: %s", url)
+        log.debug("audio-fetch: %s", url)
         ok = api.download_audio(url, str(path))
         if not ok:
             try:
@@ -270,24 +274,24 @@ def load_audio_async(api, url: str, callback):
 
 def set_avatar_from_url(avatar_widget: Adw.Avatar, url: str):
     if not url:
-        dbg("set_avatar: empty url, skipping")
+        log.debug("set_avatar: empty url, skipping")
         return
 
     def on_loaded(path):
         if not path:
-            dbg("set_avatar: no path for %s (cache miss + fetch failed)", url)
+            log.debug("set_avatar: no path for %s (cache miss + fetch failed)", url)
             return
         try:
             texture = Gdk.Texture.new_from_filename(path)
         except Exception as e:
             # Log instead of silent swallow — old GroupMe URLs sometimes
             # serve content that GdkPixbuf doesn't recognise.
-            dbg("set_avatar: texture load failed for %s: %s", path, e)
+            log.debug("set_avatar: texture load failed for %s: %s", path, e)
             return
         try:
             avatar_widget.set_custom_image(texture)
         except Exception as e:
-            dbg("set_avatar: set_custom_image failed for %s: %s", path, e)
+            log.debug("set_avatar: set_custom_image failed for %s: %s", path, e)
 
     load_image_async(url, on_loaded)
 
@@ -353,7 +357,7 @@ def ensure_packs_loaded(api, callback=None):
                     _PACK_REGISTRY[int(pid)] = p
                 except (TypeError, ValueError):
                     continue
-            dbg("powerups: loaded %d packs", len(_PACK_REGISTRY))
+            log.debug("powerups: loaded %d packs", len(_PACK_REGISTRY))
             # Write a summary showing which packs pass the pack_info()
             # validation used by the picker — lets us see WHY specific
             # packs aren't rendering.
@@ -388,11 +392,11 @@ def ensure_packs_loaded(api, callback=None):
                     rows.append(f"{pid:>4}  {name:<30s}  {status}")
                 summary_path.write_text(
                     f"Loaded packs ({len(rows)}):\n" + "\n".join(rows))
-                dbg("powerups: summary → %s", summary_path)
+                log.debug("powerups: summary → %s", summary_path)
             except Exception as e:
-                dbg("powerups: summary failed – %s", e)
+                log.debug("powerups: summary failed – %s", e)
         except Exception as e:
-            dbg("powerups: load failed – %s", e)
+            log.debug("powerups: load failed – %s", e)
 
         # Drain the waiter list atomically with the flag flip so a
         # caller that arrives *between* these two can't miss the
@@ -529,7 +533,7 @@ def set_pack_emoji(image_widget: Gtk.Image, pack_id, offset,
                 with urllib.request.urlopen(req, timeout=15) as r:
                     sheet_cache.write_bytes(r.read())
             except Exception as e:
-                dbg("powerup: sheet download failed (%s): %s", url, e)
+                log.debug("powerup: sheet download failed (%s): %s", url, e)
                 return
         try:
             sheet = GdkPixbuf.Pixbuf.new_from_file(str(sheet_cache))
@@ -538,7 +542,7 @@ def set_pack_emoji(image_widget: Gtk.Image, pack_id, offset,
             row = offset // cols
             col = offset %  cols
             if (col + 1) * cw > sw or (row + 1) * ch > sheet.get_height():
-                dbg("powerup: offset %d out of bounds in pack %s", offset, pid)
+                log.debug("powerup: offset %d out of bounds in pack %s", offset, pid)
                 return
             crop = sheet.new_subpixbuf(col * cw, row * ch, cw, ch)
             if display_size and display_size != cw:
@@ -546,7 +550,7 @@ def set_pack_emoji(image_widget: Gtk.Image, pack_id, offset,
                     display_size, display_size, GdkPixbuf.InterpType.BILINEAR)
             crop.savev(str(cell_cache), "png", [], [])
         except Exception as e:
-            dbg("powerup: crop failed pack=%s off=%d – %s", pid, offset, e)
+            log.debug("powerup: crop failed pack=%s off=%d – %s", pid, offset, e)
             return
         GLib.idle_add(lambda: image_widget.set_from_file(str(cell_cache)) or False)
 

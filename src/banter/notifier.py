@@ -20,10 +20,14 @@ from gi.repository import GLib
 from .api import GroupMeAPI
 from .async_utils import run_in_background
 from .config import Config
-from .constants import DEMO, dbg, log
+from .constants import DEMO
 from .helpers import is_hidden_system_message, format_preview
 from .notifications import NotificationDispatcher
 from .push import GroupMePush
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class BanterNotifier:
@@ -60,7 +64,7 @@ class BanterNotifier:
             try:
                 me = self._api.get_me()
             except Exception as e:
-                dbg("notifier: /users/me failed: %s", e)
+                log.debug("notifier: /users/me failed: %s", e)
                 return
             GLib.idle_add(self._on_verified, me)
 
@@ -87,9 +91,9 @@ class BanterNotifier:
         self._push = GroupMePush(
             self._api.token, str(self._user["id"]),
             on_event=self._on_push_event,
-            on_error=lambda m: dbg("push error: %s", m))
+            on_error=lambda m: log.debug("push error: %s", m))
         self._push.start()
-        dbg("notifier: push started for user %s", self._user.get("id"))
+        log.debug("notifier: push started for user %s", self._user.get("id"))
 
     def _on_push_event(self, data: dict):
         ev_type = data.get("type", "")
@@ -172,7 +176,7 @@ class BanterNotifier:
                 groups = self._api.get_groups_all()
                 chats  = self._api.get_chats_all()
             except Exception as e:
-                dbg("notifier: catch-up fetch failed: %s", e)
+                log.debug("notifier: catch-up fetch failed: %s", e)
                 return
             GLib.idle_add(self._process_catch_up, groups, chats)
 

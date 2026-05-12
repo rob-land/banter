@@ -14,9 +14,13 @@ import http.server
 
 from gi.repository import Gtk, Adw, GLib, Gio
 
-from .constants import OAUTH_AUTHORIZE_URL, OAUTH_PORT, APP_NAME, dbg
+from .constants import OAUTH_AUTHORIZE_URL, OAUTH_PORT, APP_NAME
 from .async_utils import run_in_background
 from .api import GroupMeAPI
+
+import logging
+
+log = logging.getLogger(__name__)
 
 # ── Bundled OAuth credentials ─────────────────────────────────────────
 # Register your app at dev.groupme.com/applications.
@@ -72,7 +76,7 @@ class OAuthCallbackServer:
                 threading.Thread(target=outer._server.shutdown, daemon=True).start()
 
             def log_message(self, fmt, *args):
-                dbg("oauth-server: " + fmt, *args)
+                log.debug("oauth-server: " + fmt, *args)
 
         try:
             self._server = http.server.HTTPServer(("127.0.0.1", OAUTH_PORT), _Handler)
@@ -82,7 +86,7 @@ class OAuthCallbackServer:
             return
 
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
-        dbg("oauth-server: listening on port %d", OAUTH_PORT)
+        log.debug("oauth-server: listening on port %d", OAUTH_PORT)
 
     def stop(self):
         if self._server:
@@ -170,7 +174,7 @@ class LoginDialog(Adw.Dialog):
 
         tv.set_content(outer)
         self.set_child(tv)
-        dbg("LoginDialog: opened (localhost OAuth)")
+        log.debug("LoginDialog: opened (localhost OAuth)")
 
     # ── OAuth flow ──────────────────────────────────────────────────
 
@@ -190,14 +194,14 @@ class LoginDialog(Adw.Dialog):
         auth_url = (f"{OAUTH_AUTHORIZE_URL}"
                     f"?client_id={BANTER_CLIENT_ID}"
                     f"&redirect_uri={urllib.parse.quote(OAUTH_CALLBACK)}")
-        dbg("LoginDialog: opening browser → %s", auth_url)
+        log.debug("LoginDialog: opening browser → %s", auth_url)
         try:
             Gio.AppInfo.launch_default_for_uri(auth_url, None)
         except Exception as e:
             self._on_oauth_error(f"Could not open browser: {e}")
 
     def _on_token_received(self, token: str):
-        dbg("LoginDialog: token received, verifying…")
+        log.debug("LoginDialog: token received, verifying…")
         self._show_status("Token received — verifying…")
         if self._server:
             self._server.stop()
@@ -214,7 +218,7 @@ class LoginDialog(Adw.Dialog):
         self._btn.set_label("Sign In with Browser")
         self._status.set_visible(False)
         if ok:
-            dbg("LoginDialog: success – user=%s", result.get("name"))
+            log.debug("LoginDialog: success – user=%s", result.get("name"))
             try:
                 self.disconnect_by_func(self._on_dialog_closed)
             except Exception:
@@ -241,9 +245,9 @@ class LoginDialog(Adw.Dialog):
         if self._server:
             self._server.stop()
         if not self._quit_on_cancel:
-            dbg("LoginDialog: closed without login (cancel)")
+            log.debug("LoginDialog: closed without login (cancel)")
             return
-        dbg("LoginDialog: closed without login — quitting")
+        log.debug("LoginDialog: closed without login — quitting")
         app = self._parent.get_application() if self._parent else None
         if app:
             app.quit()

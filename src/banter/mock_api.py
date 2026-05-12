@@ -19,7 +19,11 @@ import time
 from copy import deepcopy
 from pathlib import Path
 
-from .constants import APP_NAME, dbg
+from .constants import APP_NAME
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def _candidate_paths():
@@ -36,7 +40,7 @@ def _candidate_paths():
 def _load_demo_data():
     for p in _candidate_paths():
         if p.exists():
-            dbg("mock: loading demo data from %s", p)
+            log.debug("mock: loading demo data from %s", p)
             with p.open() as f:
                 return json.load(f)
     raise FileNotFoundError(
@@ -355,7 +359,7 @@ class MockGroupMeAPI:
     def __getattr__(self, name):
         if name.startswith("_"):
             raise AttributeError(name)
-        dbg("mock: stub %s called", name)
+        log.debug("mock: stub %s called", name)
         def _stub(*a, **kw):
             return None
         return _stub

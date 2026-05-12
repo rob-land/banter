@@ -3,7 +3,7 @@
 import time
 from gi.repository import Gtk, Adw, GLib, Gio, Gdk, Pango
 
-from .constants import APP_ID, APP_NAME, DEMO, dbg, esc
+from .constants import APP_ID, APP_NAME, DEMO, esc
 from .async_utils import run_in_background
 from .config import Config
 from .api import GroupMeAPI
@@ -26,6 +26,10 @@ from .dialogs.events import CreateEventDialog, EventsListDialog, CreatePollDialo
 from .dialogs.pinned import PinnedDialog
 from .dialogs.profile import EditProfileDialog
 from .dialogs.jump_to_date import JumpToDateDialog
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 @Gtk.Template(resource_path="/land/rob/banter/ui/window.ui")
@@ -265,7 +269,7 @@ class BanterWindow(Adw.ApplicationWindow):
         try:
             Gio.AppInfo.launch_default_for_uri(url, None)
         except Exception as e:
-            dbg("call launch failed: %s", e)
+            log.debug("call launch failed: %s", e)
             self.toast("Couldn't open browser for call")
 
     # ── Conversation key helper ──
@@ -442,10 +446,10 @@ class BanterWindow(Adw.ApplicationWindow):
         self._push = GroupMePush(
             self._api.token, user_id,
             on_event=self._on_push_event,
-            on_error=lambda m: dbg("push error: %s", m),
+            on_error=lambda m: log.debug("push error: %s", m),
         )
         self._push.start()
-        dbg("BanterWindow: push client started for user %s", user_id)
+        log.debug("BanterWindow: push client started for user %s", user_id)
 
     def _stop_push(self):
         if self._push:
@@ -468,7 +472,7 @@ class BanterWindow(Adw.ApplicationWindow):
         """Route push events to the active ChatView (if any)."""
         ev_type = data.get("type", "")
         subject = data.get("subject", {})
-        dbg("push event: type=%s", ev_type)
+        log.debug("push event: type=%s", ev_type)
 
         # Live poll vote — push fires on every vote (own + others) and
         # carries the full poll snapshot under subject.poll.data. Hand
@@ -1123,7 +1127,7 @@ class BanterWindow(Adw.ApplicationWindow):
                 tag=f"group-{gid}")
 
         # ── DMs ──
-        dbg("bg_poll: %d chats received", len(chats))
+        log.debug("bg_poll: %d chats received", len(chats))
         for chat in chats:
             other_id = str(chat.get("other_user", {}).get("id", ""))
             key      = self._conv_key("dm", other_id)
@@ -1133,11 +1137,11 @@ class BanterWindow(Adw.ApplicationWindow):
             prev_id  = self._last_msg_ids.get(key)
 
             if not last_id:
-                dbg("bg_poll: dm %s has no last_message.id, skipping", other_id)
+                log.debug("bg_poll: dm %s has no last_message.id, skipping", other_id)
                 continue
             if last_id == prev_id:
                 continue
-            dbg("bg_poll: dm %s NEW last_id=%s (prev=%s)",
+            log.debug("bg_poll: dm %s NEW last_id=%s (prev=%s)",
                 other_id, last_id, prev_id)
             self._last_msg_ids[key] = last_id
 
@@ -1161,7 +1165,7 @@ class BanterWindow(Adw.ApplicationWindow):
             sender_id = str(lm.get("sender_id") or lm.get("user_id") or "")
             from_me   = bool(me_id) and sender_id == me_id
             is_open   = self._is_conv_open("dm", other_id)
-            dbg("bg_poll: dm %s sender=%s me=%s from_me=%s open=%s",
+            log.debug("bg_poll: dm %s sender=%s me=%s from_me=%s open=%s",
                 other_id, sender_id, me_id, from_me, is_open)
             if from_me or is_open:
                 continue
@@ -1340,7 +1344,7 @@ class BanterWindow(Adw.ApplicationWindow):
                 # Don't silently fall back to copy — the user clicked
                 # Share, not Copy. Surface the failure and let them
                 # retry or use the explicit Copy button.
-                dbg("system share failed: %s", e)
+                log.debug("system share failed: %s", e)
                 self.toast("Couldn't open share sheet — try Copy instead")
 
         share_btn.connect("clicked", _system_share)
@@ -1358,7 +1362,7 @@ class BanterWindow(Adw.ApplicationWindow):
                 box.append(qr_lbl)
                 box.append(qr_widget)
         except Exception as e:
-            dbg("QR generation failed: %s", e)
+            log.debug("QR generation failed: %s", e)
 
         dlg.present(self)
 
@@ -1523,7 +1527,7 @@ class BanterWindow(Adw.ApplicationWindow):
                 try:
                     api.read_receipt(cid)
                 except Exception as e:
-                    dbg("mark-all-read: receipt for %s failed: %s", cid, e)
+                    log.debug("mark-all-read: receipt for %s failed: %s", cid, e)
 
         run_in_background(worker)
         self.toast(f"Marked {len(targets)} read")

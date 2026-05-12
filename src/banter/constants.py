@@ -1,37 +1,24 @@
 """
-Banter — constants, logging, and shared utilities.
+Banter — constants and shared utilities.
 """
 
 
 import sys
-import logging
-import time
 from pathlib import Path
 
-# ── Debug setup ─────────────────────────────────────────────────────
+# ── Mode flags ──────────────────────────────────────────────────────
+# Parsed from argv so other modules can react; flags are stripped from
+# sys.argv here so GApplication's own option parser doesn't reject them.
 _raw_args = sys.argv[1:]
 DEBUG      = any(a in ("--debug", "--verbose", "-v", "-d") for a in _raw_args)
 DEMO       = any(a in ("--demo",) for a in _raw_args)
 # Headless notification daemon mode — set by the autostart entry point
-# and intended to be launched at login. The flag is stripped from argv
-# here so GApplication's own option parser doesn't reject it.
+# and intended to be launched at login.
 BACKGROUND = any(a in ("--background",) for a in _raw_args)
 sys.argv = [sys.argv[0]] + [
     a for a in _raw_args
     if a not in ("--debug", "--verbose", "-v", "-d", "--demo", "--background")
 ]
-
-logging.basicConfig(
-    level   = logging.DEBUG if DEBUG else logging.WARNING,
-    format  = "%(asctime)s  %(levelname)-7s  %(name)s  %(message)s",
-    datefmt = "%H:%M:%S",
-    stream  = sys.stderr,
-)
-log = logging.getLogger("banter")
-
-def dbg(msg: str, *args):
-    if DEBUG:
-        log.debug(msg, *args)
 
 # ── App identity ─────────────────────────────────────────────────────
 from .const import APP_ID, APP_NAME, VERSION as APP_VERSION

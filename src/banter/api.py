@@ -10,8 +10,12 @@ import urllib.error
 
 from .constants import (
     GROUPME_API, GROUPME_IMAGE, GROUPME_POWERUPS, GROUPME_FILE,
-    APP_VERSION, DEBUG, dbg, log
+    APP_VERSION, DEBUG,
 )
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class GroupMeAPI:
@@ -55,9 +59,9 @@ class GroupMeAPI:
         # Debug: log the outgoing request (redact token value)
         if DEBUG:
             safe_url = url.replace(self.token or "", "<TOKEN>") if self.token else url
-            dbg("→ %s %s", method, safe_url)
+            log.debug("→ %s %s", method, safe_url)
             if data is not None:
-                dbg("  body: %s", json.dumps(data, separators=(",", ":")))
+                log.debug("  body: %s", json.dumps(data, separators=(",", ":")))
 
         req = urllib.request.Request(url)
         req.add_header("Content-Type", "application/json")
@@ -88,7 +92,7 @@ class GroupMeAPI:
             try:
                 with urllib.request.urlopen(req, body, timeout=10) as r:
                     raw = r.read().decode()
-                    dbg("← %d  %d bytes", r.status, len(raw))
+                    log.debug("← %d  %d bytes", r.status, len(raw))
                     # DELETE and some other endpoints return 204 No Content
                     # with an empty body — synthesize a meta wrapper so
                     # callers can use the usual _ok() / response shape.
@@ -98,9 +102,9 @@ class GroupMeAPI:
                     parsed = json.loads(raw)
                     if DEBUG:
                         code = parsed.get("meta", {}).get("code", "?")
-                        dbg("  meta.code=%s", code)
+                        log.debug("  meta.code=%s", code)
                         if parsed.get("meta", {}).get("errors"):
-                            dbg("  errors: %s",
+                            log.debug("  errors: %s",
                                 parsed["meta"]["errors"])
                     return parsed
             except urllib.error.HTTPError as e:
@@ -109,7 +113,7 @@ class GroupMeAPI:
                 self._fire_online()
                 if (retryable and e.code in self.RETRY_HTTP_CODES
                         and attempt < len(self.RETRY_BACKOFF_S)):
-                    dbg("← HTTP %d  retrying in %ss",
+                    log.debug("← HTTP %d  retrying in %ss",
                         e.code, self.RETRY_BACKOFF_S[attempt])
                     time.sleep(self.RETRY_BACKOFF_S[attempt])
                     continue
@@ -117,16 +121,16 @@ class GroupMeAPI:
                 try:
                     raw = e.read().decode()
                     parsed = json.loads(raw)
-                    dbg("← HTTP %d  body: %s", e.code, raw[:400])
+                    log.debug("← HTTP %d  body: %s", e.code, raw[:400])
                     self._maybe_fire_unauthorized(e.code)
                     return parsed
                 except Exception:
-                    dbg("← HTTP %d  (non-JSON body: %s)", e.code, raw[:200])
+                    log.debug("← HTTP %d  (non-JSON body: %s)", e.code, raw[:200])
                     self._maybe_fire_unauthorized(e.code)
                     return {"meta": {"code": e.code, "errors": [str(e)]}}
             except Exception as e:
                 last_exc = e
-                dbg("← EXCEPTION: %s", e)
+                log.debug("← EXCEPTION: %s", e)
                 # Surface offline immediately on the first failure so
                 # the user sees the banner during retries, not only
                 # after they exhaust. _fire_offline is idempotent at
@@ -157,7 +161,7 @@ class GroupMeAPI:
         try:
             cb()
         except Exception as e:
-            dbg("on_online callback raised: %s", e)
+            log.debug("on_online callback raised: %s", e)
 
     def _fire_offline(self):
         """Mark the connection unhealthy after a request fully fails.
@@ -171,7 +175,7 @@ class GroupMeAPI:
         try:
             cb()
         except Exception as e:
-            dbg("on_offline callback raised: %s", e)
+            log.debug("on_offline callback raised: %s", e)
 
     def _maybe_fire_unauthorized(self, code: int):
         """Fire `on_unauthorized` exactly once per session when a token-
@@ -192,7 +196,7 @@ class GroupMeAPI:
         try:
             cb()
         except Exception as e:
-            dbg("on_unauthorized callback raised: %s", e)
+            log.debug("on_unauthorized callback raised: %s", e)
 
     def _ok(self, r):
         return r.get("meta", {}).get("code") in (200, 201, 204)
@@ -202,17 +206,17 @@ class GroupMeAPI:
         """Validate an access token by calling /users/me.
         Returns (True, user_dict) on success, (False, [error_strings]) on failure."""
         self.token = token.strip()
-        dbg("verify_token: calling /users/me")
+        log.debug("verify_token: calling /users/me")
         r = self._req("GET", "/users/me")
         if self._ok(r) and r.get("response"):
             user = r["response"]
-            dbg("verify_token: success – user_id=%s  name=%s",
+            log.debug("verify_token: success – user_id=%s  name=%s",
                 user.get("id"), user.get("name"))
             return True, user
         errors = r.get("meta", {}).get("errors") or [
             f"HTTP {r.get('meta', {}).get('code', '?')} – token invalid or expired"
         ]
-        dbg("verify_token: failed – %s", errors)
+        log.debug("verify_token: failed – %s", errors)
         self.token = None
         return False, errors
 
@@ -442,7 +446,7 @@ class GroupMeAPI:
         meta = (r or {}).get("meta", {})
         errs = meta.get("errors") or []
         hint = errs[0] if errs else f"HTTP {meta.get('code', '?')}"
-        dbg("react_message_pack: failed pack=%s idx=%s – %s",
+        log.debug("react_message_pack: failed pack=%s idx=%s – %s",
             pack_id, pack_index, hint)
         return False, hint
 
@@ -543,7 +547,7 @@ class GroupMeAPI:
         r = self._req("GET", f"/conversations/{gid}/gallery",
                       params=params)
         resp = r.get("response", {})
-        dbg("get_gallery raw type=%s", type(resp).__name__)
+        log.debug("get_gallery raw type=%s", type(resp).__name__)
         if isinstance(resp, dict):
             return resp.get("messages", [])
         if isinstance(resp, list):
@@ -793,11 +797,11 @@ class GroupMeAPI:
         content_type = ct_map.get(ext, "image/jpeg")
 
         url = f"{GROUPME_IMAGE}/pictures?token={self.token}"
-        dbg("upload_image: %s  content-type=%s", file_path, content_type)
+        log.debug("upload_image: %s  content-type=%s", file_path, content_type)
 
         with open(file_path, "rb") as f:
             data = f.read()
-        dbg("upload_image: %d bytes to upload", len(data))
+        log.debug("upload_image: %d bytes to upload", len(data))
 
         req = urllib.request.Request(url, data=data)
         req.add_header("Content-Type", content_type)
@@ -805,20 +809,20 @@ class GroupMeAPI:
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 raw = resp.read().decode()
-                dbg("upload_image: response %d  body=%s", resp.status, raw[:300])
+                log.debug("upload_image: response %d  body=%s", resp.status, raw[:300])
                 r = json.loads(raw)
                 img_url = r.get("payload", {}).get("url")
-                dbg("upload_image: image URL = %s", img_url)
+                log.debug("upload_image: image URL = %s", img_url)
                 return img_url
         except urllib.error.HTTPError as e:
             raw = ""
             try: raw = e.read().decode()
             except Exception: pass
-            dbg("upload_image: HTTP %d  %s", e.code, raw[:200])
+            log.debug("upload_image: HTTP %d  %s", e.code, raw[:200])
             log.error("Image upload failed: HTTP %d", e.code)
             return None
         except Exception as e:
-            dbg("upload_image: exception %s", e)
+            log.debug("upload_image: exception %s", e)
             log.exception("Image upload exception")
             return None
 
@@ -857,12 +861,12 @@ class GroupMeAPI:
         try:
             data = path.read_bytes()
         except Exception as e:
-            dbg("upload_file: read failed %s: %s", file_path, e)
+            log.debug("upload_file: read failed %s: %s", file_path, e)
             return None
 
         url = (f"{GROUPME_FILE}/v1/{cid}/files"
                f"?name={urllib.parse.quote(name)}")
-        dbg("upload_file: %s  mime=%s  bytes=%d", name, mime, len(data))
+        log.debug("upload_file: %s  mime=%s  bytes=%d", name, mime, len(data))
 
         req = urllib.request.Request(url, data=data, method="POST")
         req.add_header("Content-Type",     mime)
@@ -873,17 +877,17 @@ class GroupMeAPI:
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
                 raw = resp.read().decode()
-                dbg("upload_file: post→ %d  body=%s",
+                log.debug("upload_file: post→ %d  body=%s",
                     resp.status, raw[:300])
         except urllib.error.HTTPError as e:
             try:
                 err_body = e.read().decode()[:200]
             except Exception:
                 err_body = ""
-            dbg("upload_file: HTTP %d  %s", e.code, err_body)
+            log.debug("upload_file: HTTP %d  %s", e.code, err_body)
             return None
         except Exception as e:
-            dbg("upload_file: exception %s", e)
+            log.debug("upload_file: exception %s", e)
             return None
 
         # Server response shape (recovered): {"status_url": "...", "file_id": "..."}
@@ -904,7 +908,7 @@ class GroupMeAPI:
             except Exception:
                 file_id = ""
         if not file_id:
-            dbg("upload_file: could not extract file_id from %s", payload)
+            log.debug("upload_file: could not extract file_id from %s", payload)
             return None
 
         # Step 2: poll until completed.
@@ -925,17 +929,17 @@ class GroupMeAPI:
                     s_raw = r.read().decode()
                 s = json.loads(s_raw) if s_raw.strip() else {}
             except Exception as e:
-                dbg("upload_file: status poll failed: %s", e)
+                log.debug("upload_file: status poll failed: %s", e)
                 s = {}
             status = s.get("status", "")
-            dbg("upload_file: poll cnt=%d  status=%s", cnt, status)
+            log.debug("upload_file: poll cnt=%d  status=%s", cnt, status)
             if status == "completed":
                 return s.get("file_id") or file_id
             if status in ("failed", "error"):
                 return None
             cnt += 1
             time.sleep(self.UPLOAD_POLL_INTERVAL_S)
-        dbg("upload_file: timed out waiting for completion")
+        log.debug("upload_file: timed out waiting for completion")
         return None
 
     def get_file_data(self, cid: str, file_ids: list):
@@ -955,7 +959,7 @@ class GroupMeAPI:
                 raw = r.read().decode()
             entries = json.loads(raw) if raw.strip() else []
         except Exception as e:
-            dbg("get_file_data: failed: %s", e)
+            log.debug("get_file_data: failed: %s", e)
             return {}
         out = {}
         for ent in entries or []:
@@ -1002,13 +1006,13 @@ class GroupMeAPI:
                     if not chunk:
                         break
                     out.write(chunk)
-            dbg("download_audio: ok (%s)", url)
+            log.debug("download_audio: ok (%s)", url)
             return True
         except urllib.error.HTTPError as e:
-            dbg("download_audio: HTTP %d", e.code)
+            log.debug("download_audio: HTTP %d", e.code)
             return False
         except Exception as e:
-            dbg("download_audio: exception %s", e)
+            log.debug("download_audio: exception %s", e)
             return False
 
     def download_file(self, cid: str, file_id: str, dest_path: str) -> bool:
@@ -1020,7 +1024,7 @@ class GroupMeAPI:
         query string (via file_download_url) and the X-Access-Token
         header — the server accepts either; harmless to send both."""
         url = self.file_download_url(cid, file_id)
-        dbg("download_file: %s → %s", file_id, dest_path)
+        log.debug("download_file: %s → %s", file_id, dest_path)
         req = urllib.request.Request(url)
         req.add_header("X-Access-Token",   self.token or "")
         req.add_header("X-Requested-With", "GroupMeWeb/1.2.3")
@@ -1033,13 +1037,13 @@ class GroupMeAPI:
                     if not chunk:
                         break
                     out.write(chunk)
-            dbg("download_file: ok")
+            log.debug("download_file: ok")
             return True
         except urllib.error.HTTPError as e:
-            dbg("download_file: HTTP %d", e.code)
+            log.debug("download_file: HTTP %d", e.code)
             return False
         except Exception as e:
-            dbg("download_file: exception %s", e)
+            log.debug("download_file: exception %s", e)
             return False
 
 

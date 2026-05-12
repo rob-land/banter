@@ -11,7 +11,9 @@ on a sidebar row lookup.
 
 from gi.repository import Gio
 
-from .constants import dbg
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class NotificationDispatcher:
@@ -40,7 +42,7 @@ class NotificationDispatcher:
             elif tag.startswith("dm-"):
                 mute_key = "dm:" + tag[len("dm-"):]
         if mute_key and self._config.is_muted(mute_key):
-            dbg("notification suppressed (muted): %s", tag)
+            log.debug("notification suppressed (muted): %s", tag)
             return
         try:
             if self._app is None:
@@ -53,16 +55,16 @@ class NotificationDispatcher:
             for label, detailed in (buttons or ()):
                 notif.add_button(label, detailed)
             self._app.send_notification(tag, notif)
-            dbg("notification sent: [%s] %s – %s", tag, title, body[:60])
+            log.debug("notification sent: [%s] %s – %s", tag, title, body[:60])
         except Exception as e:
-            dbg("notification error: %s", e)
+            log.debug("notification error: %s", e)
 
     def withdraw(self, tag: str):
         try:
             if self._app:
                 self._app.withdraw_notification(tag)
         except Exception as e:
-            dbg("notification withdraw failed (%s): %s", tag, e)
+            log.debug("notification withdraw failed (%s): %s", tag, e)
 
     def handle_call_event(self, conv_type: str, conv_id: str,
                           subject: dict, conv_title: str = "") -> bool:

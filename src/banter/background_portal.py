@@ -16,7 +16,11 @@ import secrets as _stdlib_secrets
 
 from gi.repository import GLib, Gio
 
-from .constants import APP_ID, dbg
+from .constants import APP_ID
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def autostart_commandline() -> list:
@@ -44,7 +48,7 @@ def request_background(*, autostart: bool, commandline: list = None,
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     except Exception as e:
-        dbg("portal: no session bus (%s)", e)
+        log.debug("portal: no session bus (%s)", e)
         if on_response:
             GLib.idle_add(on_response, 2)
         return
@@ -100,7 +104,7 @@ def request_background(*, autostart: bool, commandline: list = None,
         try:
             src.call_finish(res)
         except Exception as e:
-            dbg("portal: RequestBackground failed: %s", e)
+            log.debug("portal: RequestBackground failed: %s", e)
             _emit(2)
 
     bus.call(

@@ -1,28 +1,32 @@
 """Banter — Adw.Application subclass and entry point."""
 
 import sys
+import logging
 from pathlib import Path
 
 from gi.repository import Gtk, Adw, Gdk, Gio, GLib
 
 from .config import Config
-from .constants import APP_ID, APP_NAME, APP_VERSION, BACKGROUND, DEBUG, CONFIG_DIR, CACHE_DIR, dbg, log
+from .constants import APP_ID, APP_NAME, APP_VERSION, BACKGROUND, CONFIG_DIR, CACHE_DIR
+from .logging_setup import configure_logging
 from .notifier import BanterNotifier
 from .window import BanterWindow
+
+log = logging.getLogger(__name__)
 
 
 class BanterApplication(Adw.Application):
     def __init__(self, *, background: bool = False):
         super().__init__(application_id=APP_ID)
-        self.connect("activate", self._on_activate)
-        self.connect("startup",  self._on_startup)
         self._background = background
         self._window     = None
         self._notifier   = None
 
-    def _on_startup(self, *_):
+    def do_startup(self):
         """Register the app on the session D-Bus (required for notifications)
         and wire up the 'activate' action used by notification default-action."""
+        Adw.Application.do_startup(self)
+
         activate_action = Gio.SimpleAction.new("activate", None)
         activate_action.connect("activate", lambda *_: self._bring_to_front())
         self.add_action(activate_action)
@@ -55,10 +59,10 @@ class BanterApplication(Adw.Application):
 
     def _bring_to_front(self):
         # Notifications activated from --background mode hit this path
-        # before any window exists; route through _on_activate so the
+        # before any window exists; route through do_activate so the
         # window gets built on demand (and the headless notifier shut
         # down) the same way an explicit launch would.
-        self._on_activate()
+        self.do_activate()
 
     def _on_call_join(self, _action, param):
         """Handler for the `app.call-join` notification button. Re-uses
@@ -74,7 +78,7 @@ class BanterApplication(Adw.Application):
         if self._window:
             self._window._on_call_clicked(None, gid)
 
-    def _on_activate(self, *_):
+    def do_activate(self):
         # Headless launch path: spin up the notifier, hold the app
         # alive without a visible window, and exit early. Notification
         # clicks (or a second `banter` invocation) will re-enter this
@@ -126,11 +130,11 @@ class BanterApplication(Adw.Application):
                 candidate = ancestor / "share" / "icons"
                 if candidate.is_dir():
                     theme.add_search_path(str(candidate))
-                    dbg("registered icon search path: %s", candidate)
+                    log.debug("registered icon search path: %s", candidate)
                     return
-            dbg("no bundled icon path found relative to %s", here)
+            log.debug("no bundled icon path found relative to %s", here)
         except Exception as e:
-            dbg("icon search-path registration failed: %s", e)
+            log.debug("icon search-path registration failed: %s", e)
 
     def _load_css(self):
         css = Gtk.CssProvider()
@@ -169,14 +173,9 @@ class BanterApplication(Adw.Application):
 # ─────────────────────────── Entry Point ─────────────────────────
 
 def main():
-    if DEBUG:
-        log.debug("=" * 60)
-        log.debug("Banter  v%s  — DEBUG MODE", APP_VERSION)
-        log.debug("Config : %s", CONFIG_DIR)
-        log.debug("Cache  : %s", CACHE_DIR)
-        log.debug("Python : %s", sys.version.split()[0])
-        log.debug("=" * 60)
-    elif "--help" in sys.argv or "-h" in sys.argv:
+    configure_logging()
+
+    if "--help" in sys.argv or "-h" in sys.argv:
         print(f"Banter  v{APP_VERSION}")
         print("Usage: banter [OPTIONS]")
         print("  -d, --debug    Verbose debug logging")
@@ -184,6 +183,13 @@ def main():
         print("                 (no window; intended for autostart at login)")
         print("  -h, --help     Show this message")
         sys.exit(0)
+
+    log.debug("=" * 60)
+    log.debug("Banter  v%s", APP_VERSION)
+    log.debug("Config : %s", CONFIG_DIR)
+    log.debug("Cache  : %s", CACHE_DIR)
+    log.debug("Python : %s", sys.version.split()[0])
+    log.debug("=" * 60)
 
     app = BanterApplication(background=BACKGROUND)
     sys.exit(app.run(sys.argv))

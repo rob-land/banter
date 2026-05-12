@@ -1,3 +1,7 @@
+
+import logging
+
+log = logging.getLogger(__name__)
 """Banter — libsecret wrapper for OAuth tokens.
 
 Stores GroupMe tokens in the desktop keyring (gnome-keyring,
@@ -11,7 +15,6 @@ broken keyring daemon, missing D-Bus access in a sandboxed runtime
 raising, so the caller can fall back to the legacy plaintext field.
 """
 
-from .constants import dbg
 
 try:
     import gi
@@ -19,7 +22,7 @@ try:
     from gi.repository import Secret
     _AVAILABLE = True
 except (ValueError, ImportError) as e:
-    dbg("secrets: libsecret unavailable (%s) — falling back to plaintext", e)
+    log.debug("secrets: libsecret unavailable (%s) — falling back to plaintext", e)
     Secret = None
     _AVAILABLE = False
 
@@ -62,10 +65,10 @@ def store_token(user_id: str, name: str, token: str) -> bool:
             token,
             None,
         )
-        dbg("secrets: stored token for %s → %s", user_id, ok)
+        log.debug("secrets: stored token for %s → %s", user_id, ok)
         return bool(ok)
     except Exception as e:
-        dbg("secrets: store failed for %s: %s", user_id, e)
+        log.debug("secrets: store failed for %s: %s", user_id, e)
         return False
 
 
@@ -80,7 +83,7 @@ def lookup_token(user_id: str):
         )
         return val
     except Exception as e:
-        dbg("secrets: lookup failed for %s: %s", user_id, e)
+        log.debug("secrets: lookup failed for %s: %s", user_id, e)
         return None
 
 
@@ -95,5 +98,5 @@ def clear_token(user_id: str) -> bool:
         )
         return True
     except Exception as e:
-        dbg("secrets: clear failed for %s: %s", user_id, e)
+        log.debug("secrets: clear failed for %s: %s", user_id, e)
         return False

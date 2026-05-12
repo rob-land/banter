@@ -128,7 +128,6 @@ def _build_text_markup(text: str, mentions_att, is_mine: bool = False) -> tuple:
     return ("".join(parts), True)
 
 
-
 class MessageBubble(Gtk.Box):
     # Layout tunables — class-level so a future style pass can adjust
     # them in one place rather than chasing literals through the file.

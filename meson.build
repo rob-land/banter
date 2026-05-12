@@ -36,8 +36,8 @@ py_conf.set_quoted('PKGDATADIR', pkgdatadir)
 py_conf.set_quoted('LOCALEDIR',  localedir)
 
 subdir('data')
-subdir('po')
 subdir('src')
+subdir('po')
 
 gnome.post_install(
   glib_compile_schemas:    true,

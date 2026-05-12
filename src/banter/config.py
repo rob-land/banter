@@ -4,8 +4,12 @@ import json
 import os
 import time
 
-from .constants import CONFIG_DIR, dbg
+from .constants import CONFIG_DIR
 from . import secrets
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class Config:
@@ -74,12 +78,12 @@ class Config:
             if ok:
                 acc.pop("token", None)
                 dirty = True
-                dbg("config: migrated plaintext token for %s to keyring", uid)
+                log.debug("config: migrated plaintext token for %s to keyring", uid)
             else:
                 # Keyring unreachable — leave the plaintext token where
                 # it is so the user can still sign in. The save() call
                 # below tightens the file mode to 0600 either way.
-                dbg("config: keyring unavailable, keeping plaintext token for %s", uid)
+                log.debug("config: keyring unavailable, keeping plaintext token for %s", uid)
         if dirty:
             self.save()
 

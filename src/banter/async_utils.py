@@ -11,7 +11,9 @@ import threading
 
 from gi.repository import GLib
 
-from .constants import log
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def run_in_background(worker, on_done=None, on_error=None):

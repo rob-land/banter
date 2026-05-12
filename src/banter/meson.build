@@ -22,6 +22,7 @@ banter_sources = files(
   'config.py',
   'constants.py',
   'helpers.py',
+  'logging_setup.py',
   'main.py',
   'mock_api.py',
   'notifications.py',

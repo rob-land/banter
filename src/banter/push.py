@@ -14,7 +14,11 @@ import urllib.parse
 
 from gi.repository import GLib
 
-from .constants import APP_VERSION, dbg
+from .constants import APP_VERSION
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class GroupMePush:
@@ -47,7 +51,7 @@ class GroupMePush:
         self._token      = token
         self._user_id    = str(user_id)
         self._on_event   = on_event
-        self._on_error   = on_error or (lambda m: dbg("push error: %s", m))
+        self._on_error   = on_error or (lambda m: log.debug("push error: %s", m))
         self._client_id  = None
         self._msg_id     = 0
         self._running    = False
@@ -126,7 +130,7 @@ class GroupMePush:
                 },
             }])
         except Exception as e:
-            dbg("push: live subscribe %s failed: %s", channel, e)
+            log.debug("push: live subscribe %s failed: %s", channel, e)
 
     def publish(self, channel: str, data: dict) -> bool:
         """Publish a Faye event to `channel`. Used for typing pulses.
@@ -147,7 +151,7 @@ class GroupMePush:
             }])
             return True
         except Exception as e:
-            dbg("push: publish to %s failed: %s", channel, e)
+            log.debug("push: publish to %s failed: %s", channel, e)
             return False
 
     def publish_typing_group(self, group_id: str):
@@ -213,7 +217,7 @@ class GroupMePush:
 
         # Check whether server accepted permessage-deflate
         self._deflate = b"permessage-deflate" in resp
-        dbg("push: WebSocket connected (deflate=%s)", self._deflate)
+        log.debug("push: WebSocket connected (deflate=%s)", self._deflate)
 
     def _ws_send(self, data: str):
         """Send a masked text WebSocket frame.
@@ -342,7 +346,7 @@ class GroupMePush:
             data = json.loads(text)
             return data if isinstance(data, list) else [data]
         except json.JSONDecodeError:
-            dbg("push: undecodable frame (len=%d), skipping", len(raw))
+            log.debug("push: undecodable frame (len=%d), skipping", len(raw))
             return []            # skip frame, keep connection
 
     # ── Faye session ────────────────────────────────────────────────
@@ -361,9 +365,9 @@ class GroupMePush:
             if msg.get("channel") == "/meta/handshake":
                 if msg.get("successful"):
                     self._client_id = msg["clientId"]
-                    dbg("push: handshake ok clientId=%s", self._client_id)
+                    log.debug("push: handshake ok clientId=%s", self._client_id)
                     return True
-                dbg("push: handshake refused: %s", msg)
+                log.debug("push: handshake refused: %s", msg)
                 return False
         return False
 
@@ -383,7 +387,7 @@ class GroupMePush:
         for msg in frames:
             if msg.get("channel") == "/meta/subscribe":
                 ok = msg.get("successful", False)
-                dbg("push: subscribe %s → %s", channel, ok)
+                log.debug("push: subscribe %s → %s", channel, ok)
                 return ok
         return False
 
@@ -421,7 +425,7 @@ class GroupMePush:
             except Exception as e:
                 fail_count += 1
                 backoff = min(2 ** fail_count, 60)
-                dbg("push: connect failed (%s), retry in %ds", e, backoff)
+                log.debug("push: connect failed (%s), retry in %ds", e, backoff)
                 if fail_count <= MAX_FAILS:
                     GLib.idle_add(self._on_error,
                                    f"Push connection failed – retrying in {backoff}s")
@@ -456,7 +460,7 @@ class GroupMePush:
                         advice = ev.get("advice", {})
                         if advice.get("reconnect") == "handshake":
                             # Server is asking us to fully re-authenticate
-                            dbg("push: server requested re-handshake")
+                            log.debug("push: server requested re-handshake")
                             normal_close = True
                             break
 
@@ -473,7 +477,7 @@ class GroupMePush:
                             GLib.idle_add(self._on_event, data)
 
             except Exception as e:
-                dbg("push: session error: %s", e)
+                log.debug("push: session error: %s", e)
                 fail_count += 1
                 if fail_count <= MAX_FAILS:
                     GLib.idle_add(self._on_error,
