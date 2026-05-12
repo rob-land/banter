@@ -290,9 +290,16 @@ Required secrets on the self-hosted Forgejo for `publish.yml`:
   3.10+ when they use forward references.
 - Type-hint internal APIs lightly; don't over-annotate one-shot
   helpers.
-- Debug output is gated behind a `--debug` flag and a `debug` module
-  (`debug.exception(msg, exc)`); never use bare `print()` in shipped
-  code.
+- Logging uses Python's standard `logging` module. Each module owns a
+  `log = logging.getLogger(__name__)` at the top; calls are
+  `log.debug(...)` / `log.info(...)` / `log.exception('msg')`. Don't
+  use bare `print()` in shipped code.
+- A `logging_setup.py` per project owns `configure_logging()`; main
+  calls it before anything else. Default level is INFO; `--debug` (or
+  `<APP>_DEBUG=1` in the environment) bumps to DEBUG. The setup
+  installs both a stderr stream and a rotating file handler under
+  `GLib.get_user_data_dir()/<project>/<project>.log` so Phosh users
+  can read logs without `journalctl`.
 
 ## Documentation
 
