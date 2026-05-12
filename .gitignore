@@ -9,7 +9,6 @@ repo/
 *.flatpak
 
 # Generated files
-build-aux/flatpak/python3-deps.json
 src/const.py
 
 # Blueprint output (compiled from data/ui/*.blp at build time)
