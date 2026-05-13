@@ -88,11 +88,35 @@ jobs:
           DEPLOY_TARGET: ${{ secrets.DEPLOY_TARGET }}
         run: |
           mkdir -p "$LOCAL_REPO"
-          rsync -avz -e "ssh -i $HOME/.ssh/id_ed25519" \
+          rsync -avz --partial -e "ssh -i $HOME/.ssh/id_ed25519" \
             "$DEPLOY_TARGET/" "$LOCAL_REPO/" || true
           if [ ! -f "$LOCAL_REPO/config" ]; then
             echo "::notice::No remote repo state found — initialising a fresh archive repo locally"
             ostree --repo="$LOCAL_REPO" init --mode=archive
+            exit 0
+          fi
+
+          # Drop refs whose backing commit object isn't present locally.
+          # rsync can leave the destination in this state when an earlier
+          # transfer was interrupted (we tolerate partial pulls with
+          # `|| true` above), and `flatpak build-export` then aborts
+          # with "No such metadata object <hash>.commit" because it
+          # can't resolve the previous commit to use as the new export's
+          # parent.
+          broken=0
+          while read -r ref; do
+            [ -z "$ref" ] && continue
+            if ! ostree --repo="$LOCAL_REPO" show "$ref" >/dev/null 2>&1; then
+              echo "::warning::Dropping broken ref $ref (commit object missing locally)"
+              ostree --repo="$LOCAL_REPO" refs --delete "$ref" || true
+              broken=$((broken + 1))
+            fi
+          done < <(ostree --repo="$LOCAL_REPO" refs 2>/dev/null || true)
+          if [ "$broken" -gt 0 ]; then
+            echo "::warning::Cleared $broken broken ref(s); the export step will re-create them"
+            # Remove the now-stale summary so build-update-repo regenerates
+            # it against the surviving ref set.
+            rm -f "$LOCAL_REPO/summary" "$LOCAL_REPO/summary.sig"
           fi
 
       - name: Register qemu binfmt for cross-arch builds
