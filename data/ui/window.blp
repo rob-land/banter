@@ -172,24 +172,40 @@ template $BanterWindow: Adw.ApplicationWindow {
 }
 
 menu primary_menu {
-  item {
-    label: _("Edit My Profile");
-    action: "win.edit-profile";
+  section {
+    item {
+      label: _("Edit My Profile");
+      action: "win.edit-profile";
+    }
+
+    item {
+      label: _("Mark All Read");
+      action: "win.mark-all-read";
+    }
   }
 
-  item {
-    label: _("Mark All Read");
-    action: "win.mark-all-read";
+  section {
+    item {
+      label: _("Preferences");
+      action: "app.preferences";
+    }
   }
 
-  item {
-    label: _("Keyboard Shortcuts");
-    action: "app.shortcuts";
-  }
+  section {
+    item {
+      label: _("Keyboard Shortcuts");
+      action: "app.shortcuts";
+    }
 
-  item {
-    label: _("About Banter");
-    action: "app.about";
+    item {
+      label: _("About Banter");
+      action: "app.about";
+    }
+
+    item {
+      label: _("Quit");
+      action: "app.quit";
+    }
   }
 }
 

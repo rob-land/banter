@@ -112,6 +112,15 @@ class BanterWindow(Adw.ApplicationWindow):
         # menu after a mute change.
         self._mute_btn = None
 
+        # Close-to-background: when the "Run in background" preference
+        # is on we hide the window instead of quitting and call
+        # app.hold() to keep the push + notification path alive. The
+        # `_held` flag mirrors that ref-count so reactivation can
+        # release exactly once.
+        self._held = False
+        self.connect("close-request", self._on_close_request)
+        self.connect("show",          self._on_window_shown)
+
         if DEMO:
             self._api = MockGroupMeAPI()
             self._enter_main(self._api.get_me())
@@ -1570,6 +1579,36 @@ class BanterWindow(Adw.ApplicationWindow):
         self._load_contacts()
         self._start_bg_poll()
         self._start_push()
+
+    # ── Close-to-background ──
+    def _on_close_request(self, *_):
+        if not self._config.get_pref("close_to_background", False):
+            return False
+        if not self._config.get_active_account():
+            return False
+        # Hide and hold. The hidden window keeps its push client and
+        # notification dispatcher running so messages still surface
+        # via Gio.Notification; do_activate on the app re-presents
+        # this same window when a notification (or relaunch) wakes it.
+        self.set_visible(False)
+        app = self.get_application()
+        if app and not self._held:
+            app.hold()
+            self._held = True
+            n = Gio.Notification.new("Banter is running in the background")
+            n.set_body("You'll still get message notifications. "
+                        "Click to reopen.")
+            n.set_default_action("app.activate")
+            app.send_notification("banter-bg-running", n)
+        return True
+
+    def _on_window_shown(self, *_):
+        app = self.get_application()
+        if app and self._held:
+            app.release()
+            self._held = False
+        if app:
+            app.withdraw_notification("banter-bg-running")
 
 
 # ─────────────────────────── Application ─────────────────────────

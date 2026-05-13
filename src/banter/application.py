@@ -49,6 +49,11 @@ class BanterApplication(Adw.Application):
         self.add_action(quit_action)
         self.set_accels_for_action("app.quit", ["<ctrl>q"])
 
+        prefs_action = Gio.SimpleAction.new("preferences", None)
+        prefs_action.connect("activate", self._show_preferences)
+        self.add_action(prefs_action)
+        self.set_accels_for_action("app.preferences", ["<ctrl>comma"])
+
         # Notification button: Join the call. The detailed action passes
         # the conversation id as the string parameter; we route to the
         # window's existing call-launch path (fetch a fresh meeting URL
@@ -178,6 +183,11 @@ class BanterApplication(Adw.Application):
         if self._window:
             win.set_transient_for(self._window)
         win.present()
+
+    def _show_preferences(self, *_):
+        from .dialogs.preferences import PreferencesDialog
+        dlg = PreferencesDialog(Config())
+        dlg.present(self._window)
 
 
 # ─────────────────────────── Entry Point ─────────────────────────

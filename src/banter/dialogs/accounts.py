@@ -2,7 +2,6 @@
 
 from gi.repository import Gtk, Adw
 
-from .. import background_portal
 from ..constants import esc
 from ..config import Config
 from ..helpers import set_avatar_from_url
@@ -21,8 +20,6 @@ class AccountsDialog(Adw.PreferencesDialog):
 
         self._accs_grp = Adw.PreferencesGroup(title="Signed-in Accounts")
         page.add(self._accs_grp)
-
-        self._build_notifications_group(page)
 
         # Trailing "Add Account" row — the GNOME Settings pattern for
         # "add to a list" is a row at the end of the same group rather
@@ -109,38 +106,3 @@ class AccountsDialog(Adw.PreferencesDialog):
         self._config.add_account(token, user)
         self._on_switch(self._config.get_active_account())
         self._refresh_list()
-
-    # ── Notifications group (background-mode autostart toggle) ──
-    def _build_notifications_group(self, page: Adw.PreferencesPage):
-        grp = Adw.PreferencesGroup(title="Notifications")
-        page.add(grp)
-        self._bg_switch = Adw.SwitchRow(
-            title="Run in background",
-            subtitle=("Show new-message notifications when Banter isn't open. "
-                      "Starts automatically at login."))
-        self._bg_switch.set_active(
-            bool(self._config.get_pref("background_enabled", False)))
-        self._bg_switch.connect("notify::active", self._on_bg_toggle)
-        grp.add(self._bg_switch)
-
-    def _on_bg_toggle(self, sw, _pspec):
-        enabled = sw.get_active()
-        # Persist intent immediately. If the portal denies the request
-        # we'll roll back below; until then the pref reflects what the
-        # user just asked for.
-        self._config.set_pref("background_enabled", enabled)
-
-        def on_response(code: int):
-            if code == 0:
-                return
-            # Cancelled / portal failure → revert silently. Block our
-            # own handler while flipping the switch so we don't issue
-            # a second portal request from the rollback.
-            sw.handler_block_by_func(self._on_bg_toggle)
-            sw.set_active(not enabled)
-            sw.handler_unblock_by_func(self._on_bg_toggle)
-            self._config.set_pref("background_enabled", not enabled)
-
-        background_portal.request_background(
-            autostart=enabled,
-            on_response=on_response)
