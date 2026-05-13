@@ -29,6 +29,7 @@ class GalleryDialog(StandardDialog):
         self._group      = group
         self._parent     = parent
         self._messages   = []          # accumulated message dicts
+        self._albums     = []          # populated by _populate_albums
         self._oldest_ts  = None        # gallery_ts of oldest fetched msg
         self._loading    = False
         self._exhausted  = False
@@ -42,7 +43,15 @@ class GalleryDialog(StandardDialog):
         up_btn.connect("clicked", self._pick_photo)
         self.add_header_widget(up_btn, end=True)
 
-        # New album button (left of upload)
+        # Download-everything button (left of upload)
+        dl_btn = Gtk.Button(icon_name="document-save-symbolic")
+        dl_btn.add_css_class("flat")
+        dl_btn.set_tooltip_text(
+            "Download all loaded photos / videos and every album")
+        dl_btn.connect("clicked", self._on_download_all)
+        self.add_header_widget(dl_btn, end=True)
+
+        # New album button (left of download)
         new_album_btn = Gtk.Button(icon_name="folder-new-symbolic")
         new_album_btn.add_css_class("flat")
         new_album_btn.set_tooltip_text("Create new album")
@@ -144,6 +153,7 @@ class GalleryDialog(StandardDialog):
         run_in_background(worker)
 
     def _populate_albums(self, albums: list):
+        self._albums = list(albums or [])
         if not albums:
             return
         self._albums_label.set_visible(True)
@@ -160,9 +170,10 @@ class GalleryDialog(StandardDialog):
 
         thumb = Gtk.Picture()
         thumb.set_can_shrink(True)
-        thumb.set_content_fit(Gtk.ContentFit.COVER)
+        thumb.set_content_fit(Gtk.ContentFit.CONTAIN)
         thumb.set_size_request(120, 90)
         thumb.add_css_class("attachment-frame")
+        thumb.add_css_class("album-thumb")
         box.append(thumb)
 
         cover = album.get("cover_image_url", "")
@@ -171,8 +182,11 @@ class GalleryDialog(StandardDialog):
                 if not path:
                     return
                 try:
+                    # preserve_aspect_ratio=True so the texture itself
+                    # is not distorted; Picture's CONTAIN then letter/
+                    # pillarboxes it inside the 120×90 frame.
                     pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                        path, 120, 90, False)
+                        path, 120, 90, True)
                     ok, buf = pix.save_to_bufferv("png", [], [])
                     if ok:
                         thumb.set_paintable(Gdk.Texture.new_from_bytes(
@@ -282,7 +296,10 @@ class GalleryDialog(StandardDialog):
 
         picture = Gtk.Picture()
         picture.set_can_shrink(True)
-        picture.set_content_fit(Gtk.ContentFit.COVER)
+        # Preserve aspect ratio inside the square cell — landscape
+        # photos letterbox top/bottom, portrait pillarboxes left/right.
+        # The .album-thumb backdrop fills the bars.
+        picture.set_content_fit(Gtk.ContentFit.CONTAIN)
         picture.set_size_request(self.THUMB_SIZE, self.THUMB_SIZE)
         stack.add_named(picture, "image")
 
@@ -311,7 +328,7 @@ class GalleryDialog(StandardDialog):
             if path:
                 try:
                     pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                        path, self.THUMB_SIZE, self.THUMB_SIZE, False)
+                        path, self.THUMB_SIZE, self.THUMB_SIZE, True)
                     ok, buf = pixbuf.save_to_bufferv("png", [], [])
                     if ok:
                         texture = Gdk.Texture.new_from_bytes(
@@ -480,6 +497,69 @@ class GalleryDialog(StandardDialog):
         AlbumCreatorDialog(
             self._api, self._group, self._parent).present(self._parent)
 
+    # ── Download everything ──
+    def _on_download_all(self, *_):
+        if not self._messages and not self._albums:
+            self._parent.toast("Nothing to download yet")
+            return
+        fd = Gtk.FileDialog()
+        fd.set_title(
+            f"Download '{self._group.get('name', 'Gallery')}'")
+        fd.select_folder(self._parent, None, self._on_download_all_dest)
+
+    def _on_download_all_dest(self, fd, result):
+        try:
+            folder = fd.select_folder_finish(result)
+        except GLib.Error:
+            return
+        dest = folder.get_path()
+        if not dest:
+            return
+
+        # Snapshot the state we'll need off the main thread.
+        messages = list(self._messages)
+        albums   = list(self._albums)
+        api      = self._api
+        gid      = self._group["id"]
+        parent   = self._parent
+
+        parent.toast("Preparing download…")
+
+        def worker():
+            items = []
+            # Currently-loaded gallery photos / videos.
+            for msg in messages:
+                for att in msg.get("attachments", []):
+                    if att.get("type") in ("image", "video") and att.get("url"):
+                        items.append({
+                            "url":    att["url"],
+                            "kind":   att["type"],
+                            "subdir": "gallery",
+                        })
+            # Each album's media — one round-trip per album.
+            for album in albums:
+                aid = album.get("album_id")
+                if not aid:
+                    continue
+                title = (album.get("title") or "album").strip() or "album"
+                safe = _safe_fs_name(title)
+                try:
+                    full = api.get_album(gid, aid)
+                except Exception:
+                    continue
+                for att in (full or {}).get("attachments") or []:
+                    url = att.get("media_url", "")
+                    kind = att.get("media_type", "image")
+                    if url:
+                        items.append({
+                            "url":    url,
+                            "kind":   kind,
+                            "subdir": f"albums/{safe}",
+                        })
+            _do_bulk_download(items, dest, parent)
+
+        run_in_background(worker)
+
     # ── Multi-select / "Add to album" ──
     def _on_select_toggle(self, btn):
         self._select_mode = btn.get_active()
@@ -614,6 +694,17 @@ class AlbumViewDialog(StandardDialog):
         # Tracked so _load can clean up the empty-state placeholder
         # when refreshing after the first photo is added.
         self._empty_state = None
+        # Captured from _populate so the download button doesn't have
+        # to re-fetch the album.
+        self._attachments: list = []
+
+        # Download-album button (left of the add button).
+        dl_btn = Gtk.Button(icon_name="document-save-symbolic")
+        dl_btn.add_css_class("flat")
+        dl_btn.set_tooltip_text("Download every photo / video in this album")
+        dl_btn.connect("clicked", self._on_download_album)
+        self.add_header_widget(dl_btn, end=True)
+        self._download_btn = dl_btn
 
         # "+" button in the header — picks a local image, uploads,
         # adds, then re-loads the flow so the new tile appears.
@@ -687,7 +778,10 @@ class AlbumViewDialog(StandardDialog):
         self._spinner.set_spinning(False)
         self._spinner.set_visible(False)
 
+        self._attachments = list(attachments or [])
+
         if not attachments:
+            self._download_btn.set_sensitive(False)
             empty = Adw.StatusPage(
                 icon_name="image-x-generic-symbolic",
                 title="Album is empty",
@@ -700,12 +794,46 @@ class AlbumViewDialog(StandardDialog):
             self._empty_state = empty
             return
 
+        self._download_btn.set_sensitive(True)
         for att in attachments:
             url = att.get("media_url", "")
             kind = att.get("media_type", "image")
             if not url:
                 continue
             self._flow.append(self._make_thumb(url, kind, att))
+
+    # ── Download album ──
+    def _on_download_album(self, *_):
+        if not self._attachments:
+            self._parent.toast("Nothing to download")
+            return
+        title = (self._album.get("title") or "album").strip() or "album"
+        safe = _safe_fs_name(title)
+        items = [
+            {"url": att.get("media_url", ""),
+             "kind": att.get("media_type", "image"),
+             "subdir": safe}
+            for att in self._attachments
+            if att.get("media_url")
+        ]
+        if not items:
+            self._parent.toast("Nothing to download")
+            return
+        fd = Gtk.FileDialog()
+        fd.set_title(f"Download '{title}'")
+        fd.select_folder(self._parent, None,
+                         lambda fd2, res: self._on_download_dest(
+                             fd2, res, items))
+
+    def _on_download_dest(self, fd, result, items):
+        try:
+            folder = fd.select_folder_finish(result)
+        except GLib.Error:
+            return
+        dest = folder.get_path()
+        if not dest:
+            return
+        _bulk_download(items, dest, self._parent)
 
     def _make_thumb(self, url: str, kind: str, att: dict) -> Gtk.Widget:
         container = Gtk.Overlay()
@@ -720,7 +848,9 @@ class AlbumViewDialog(StandardDialog):
 
         picture = Gtk.Picture()
         picture.set_can_shrink(True)
-        picture.set_content_fit(Gtk.ContentFit.COVER)
+        # Preserve aspect ratio (letterbox / pillarbox) — the
+        # .album-thumb backdrop fills the bars.
+        picture.set_content_fit(Gtk.ContentFit.CONTAIN)
         picture.set_size_request(self.THUMB_SIZE, self.THUMB_SIZE)
         stack.add_named(picture, "image")
 
@@ -749,7 +879,7 @@ class AlbumViewDialog(StandardDialog):
             if path:
                 try:
                     pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(
-                        path, self.THUMB_SIZE, self.THUMB_SIZE, False)
+                        path, self.THUMB_SIZE, self.THUMB_SIZE, True)
                     ok, buf = pix.save_to_bufferv("png", [], [])
                     if ok:
                         picture.set_paintable(
@@ -1009,4 +1139,123 @@ def _add_media(api, group, album, media, parent, on_done):
         GLib.idle_add(report)
 
     run_in_background(worker)
+
+
+# ─────────────────────────── Bulk download ────────────────────────
+
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic")
+_VIDEO_EXTS = (".mp4", ".mov", ".webm", ".m4v")
+
+
+def _safe_fs_name(name: str) -> str:
+    """Strip / replace characters that are awkward in filesystem paths.
+    Falls back to a generic label if everything's stripped."""
+    import re
+    cleaned = re.sub(r'[\/\\:\*\?"<>\|\x00-\x1f]', '_', name).strip(" .")
+    return cleaned[:80] or "album"
+
+
+def _ext_for(url: str, kind: str) -> str:
+    """Infer a sensible file extension. GroupMe URLs often end with a
+    size suffix like '.jpg.large' or '.png.preview'; scan the path
+    for the first known media extension instead of taking the tail."""
+    from urllib.parse import urlsplit
+    path = urlsplit(url).path.lower()
+    for ext in _IMAGE_EXTS + _VIDEO_EXTS:
+        if ext in path:
+            return ext
+    return ".mp4" if kind == "video" else ".jpg"
+
+
+def _bulk_download(items: list, dest_root: str, parent) -> None:
+    """Spawn a worker that fetches each item in ``items`` and writes
+    it under ``dest_root``. Toasts on ``parent`` when starting and
+    when complete. Safe to call from the GTK main thread.
+
+    Each item is a dict: ``{"url": str, "kind": "image"|"video",
+    "subdir": str}``. ``subdir`` may contain slashes for nested
+    directories under ``dest_root``."""
+    if not items:
+        try: parent.toast("Nothing to download")
+        except Exception: pass
+        return
+
+    try:
+        parent.toast(
+            f"Downloading {len(items)} item{'s' if len(items) != 1 else ''}…")
+    except Exception:
+        pass
+
+    def worker():
+        _do_bulk_download(items, dest_root, parent)
+
+    run_in_background(worker)
+
+
+def _do_bulk_download(items: list, dest_root: str, parent) -> None:
+    """Run on a worker thread: fetch + save each item, then toast.
+
+    Image URLs are served from cache when available (the gallery has
+    typically already populated the cache during thumbnail render);
+    misses and videos are fetched fresh."""
+    import shutil
+    import urllib.request
+    from pathlib import Path
+
+    from ..constants import APP_VERSION
+
+    dest = Path(dest_root)
+    # Counter per subdir for non-colliding filenames.
+    seq: dict = {}
+    saved = 0
+
+    for item in items:
+        url    = item.get("url", "")
+        kind   = item.get("kind", "image")
+        subdir = item.get("subdir", "") or ""
+        if not url:
+            continue
+
+        target_dir = dest / subdir if subdir else dest
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            log.debug("bulk-dl: mkdir %s failed: %s", target_dir, exc)
+            continue
+
+        idx = seq.get(subdir, 0) + 1
+        seq[subdir] = idx
+        out = target_dir / f"{idx:04d}{_ext_for(url, kind)}"
+
+        try:
+            # Hit the cache for images that the thumbnail render
+            # already fetched. Videos are not cached as raw files,
+            # so they go straight to network.
+            cached = CACHE_DIR / f"{_cache_key(url)}.img"
+            if kind == "image" and cached.exists():
+                shutil.copy(cached, out)
+            else:
+                req = urllib.request.Request(url)
+                req.add_header("User-Agent",
+                               f"GroupMe-GNOME/{APP_VERSION}")
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    out.write_bytes(r.read())
+            saved += 1
+        except Exception as exc:
+            log.debug("bulk-dl: failed %s: %s", url, exc)
+
+    total = len(items)
+    def report():
+        try:
+            if saved == total:
+                parent.toast(f"Downloaded {saved} item{'s' if saved != 1 else ''}")
+            elif saved == 0:
+                parent.toast("Download failed")
+            else:
+                parent.toast(
+                    f"Downloaded {saved} of {total} items (some failed)")
+        except Exception:
+            pass
+
+    GLib.idle_add(report)
 

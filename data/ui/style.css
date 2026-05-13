@@ -91,12 +91,19 @@
     color: @dim_label_color;
 }
 
-/* ── Album photo grid ── */
+/* ── Album photo grid ──
+ *
+ * The thumb container fills the grid cell with a dark backdrop so
+ * letter/pillar bars are visible when the contained Picture preserves
+ * the source's aspect ratio (Gtk.ContentFit.CONTAIN). Hover overlays
+ * a tint on top of the backdrop.
+ */
 .album-thumb {
     border-radius: 8px;
+    background-color: alpha(black, 0.55);
 }
 .album-thumb:hover {
-    background-color: alpha(@accent_bg_color, 0.12);
+    background-color: alpha(@accent_bg_color, 0.18);
 }
 .album-thumb picture {
     border-radius: 8px;
