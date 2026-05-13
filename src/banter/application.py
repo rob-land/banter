@@ -185,8 +185,13 @@ class BanterApplication(Adw.Application):
         win.present()
 
     def _show_preferences(self, *_):
+        # Reuse the window's Config so pref writes are visible to the
+        # close-to-background handler without a process restart. Config
+        # has no on-disk reload path, so two Config() instances drift
+        # the moment one of them writes.
         from .dialogs.preferences import PreferencesDialog
-        dlg = PreferencesDialog(Config())
+        cfg = self._window._config if self._window else Config()
+        dlg = PreferencesDialog(cfg)
         dlg.present(self._window)
 
 
