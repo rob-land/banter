@@ -1,22 +1,35 @@
-"""Banter — XDG Background portal helper.
+"""Banter — autostart entry management.
 
-Wraps `org.freedesktop.portal.Background.RequestBackground` so the
-Notifications-prefs toggle can register/revoke an autostart entry for
-`banter --background`. Works both inside Flatpak (xdg-desktop-portal
-proxies to host) and outside (writes ~/.config/autostart/ directly).
+The XDG Background portal would be the conventional channel to
+register a per-user autostart .desktop, but Phosh (FuriOS,
+postmarketOS, …) ships an xdg-desktop-portal with no Background
+implementer — `RequestBackground` hangs forever waiting for a
+Response signal that never gets emitted. Verified on FuriOS 14:
+introspection on /org/freedesktop/portal/desktop shows no
+`org.freedesktop.portal.Background` interface, and none of the
+loaded backends (gtk, phosh, phosh-shell, phrosh, gnome-keyring)
+declares it either.
 
-Response codes from the portal:
-  0 — granted (autostart file written or removed)
-  1 — user cancelled the prompt
-  2 — request ended in some other way (treat as failure)
+So write the .desktop directly. The user already consented by
+flipping the switch in Preferences, so the portal's permission
+dialog is redundant; same end-state on GNOME desktop and Phosh.
+
+Inside Flatpak we need write access to the host's autostart dir;
+the manifest grants it via `--filesystem=xdg-config/autostart:create`.
+
+Path used: ${XDG_CONFIG_HOME or ~/.config}/autostart/<APP_ID>.desktop
+
+The function keeps its old (portal-era) `on_response(code)` callback
+contract — 0 = success, 2 = failure — so the existing toggle UI
+that rolls back on non-zero still works without changes.
 """
 
 import os
-import secrets as _stdlib_secrets
+from pathlib import Path
 
-from gi.repository import GLib, Gio
+from gi.repository import GLib
 
-from .constants import APP_ID
+from .constants import APP_ID, APP_NAME
 
 import logging
 
@@ -32,90 +45,62 @@ def autostart_commandline() -> list:
     return ["banter", "--background"]
 
 
-def request_background(*, autostart: bool, commandline: list = None,
-                       parent_xdg_handle: str = "",
-                       on_response=None):
-    """Call `RequestBackground` asynchronously; on completion invoke
-    `on_response(code)` with the portal response code (0 = granted).
+def _autostart_path() -> Path:
+    if os.path.exists("/.flatpak-info"):
+        # Inside the sandbox XDG_CONFIG_HOME is rewritten to the
+        # per-app dir (~/.var/app/<appid>/config). The host's
+        # ~/.config/autostart is bind-mounted at the literal
+        # ~/.config/autostart path via the manifest's
+        # --filesystem=xdg-config/autostart:create grant, so target
+        # that path directly rather than the redirected env var.
+        base = str(Path.home() / ".config")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "autostart" / f"{APP_ID}.desktop"
 
-    Best-effort: if the session bus or the portal isn't reachable we
-    invoke `on_response(2)` so callers can revert UI state cleanly
-    rather than getting wedged.
+
+def _desktop_file_body(commandline: list) -> str:
+    exec_line = " ".join(GLib.shell_quote(arg) for arg in commandline)
+    return (
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        f"Name={APP_NAME}\n"
+        f"Exec={exec_line}\n"
+        f"X-Flatpak={APP_ID}\n"
+        "X-GNOME-Autostart-enabled=true\n"
+        "NoDisplay=true\n"
+    )
+
+
+def request_background(*, autostart: bool, commandline: list = None,
+                       on_response=None, **_ignored):
+    """Write or remove the per-user autostart .desktop entry for
+    `banter --background`. Invokes `on_response(0)` on success or
+    `on_response(2)` on filesystem failure, scheduled on the GLib
+    main loop so the UI handler runs in the right context.
+
+    **_ignored swallows kwargs that the portal-era signature accepted
+    (e.g. parent_xdg_handle) without forcing callers to change.
     """
     if commandline is None:
         commandline = autostart_commandline()
 
+    path = _autostart_path()
     try:
-        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-    except Exception as e:
-        log.debug("portal: no session bus (%s)", e)
-        if on_response:
-            GLib.idle_add(on_response, 2)
-        return
-
-    # Predict the Request object path so we can subscribe to its
-    # Response signal *before* invoking the method — otherwise a fast
-    # portal could fire the signal before our subscriber is wired up.
-    handle_token = "banter_" + _stdlib_secrets.token_hex(8)
-    sender = bus.get_unique_name() or ""
-    sender_for_path = sender.lstrip(":").replace(".", "_")
-    request_path = (
-        f"/org/freedesktop/portal/desktop/request/"
-        f"{sender_for_path}/{handle_token}")
-
-    sub_id = [None]
-
-    def _emit(code: int):
-        if sub_id[0] is not None:
+        if autostart:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(_desktop_file_body(commandline))
+            log.info("autostart: wrote %s", path)
+        else:
             try:
-                bus.signal_unsubscribe(sub_id[0])
-            except Exception:
+                path.unlink()
+                log.info("autostart: removed %s", path)
+            except FileNotFoundError:
                 pass
-            sub_id[0] = None
-        if on_response:
-            on_response(int(code))
+        code = 0
+    except OSError as e:
+        log.warning("autostart: filesystem error: %s", e)
+        code = 2
 
-    def _on_response(_conn, _sender, _path, _iface, _signal, params):
-        try:
-            code, _results = params.unpack()
-        except Exception:
-            code = 2
-        _emit(code)
-
-    sub_id[0] = bus.signal_subscribe(
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Request",
-        "Response",
-        request_path,
-        None,
-        Gio.DBusSignalFlags.NONE,
-        _on_response)
-
-    options = GLib.Variant("a{sv}", {
-        "handle_token":     GLib.Variant("s", handle_token),
-        "reason":           GLib.Variant("s",
-            "Deliver GroupMe message notifications when Banter isn't open."),
-        "autostart":        GLib.Variant("b", bool(autostart)),
-        "commandline":      GLib.Variant("as", list(commandline)),
-        "dbus-activatable": GLib.Variant("b", False),
-    })
-
-    def _on_call_done(src, res, _user):
-        try:
-            src.call_finish(res)
-        except Exception as e:
-            log.debug("portal: RequestBackground failed: %s", e)
-            _emit(2)
-
-    bus.call(
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.Background",
-        "RequestBackground",
-        GLib.Variant("(sa{sv})", (parent_xdg_handle, options)),
-        None,
-        Gio.DBusCallFlags.NONE,
-        -1,
-        None,
-        _on_call_done,
-        None)
+    if on_response:
+        GLib.idle_add(on_response, code)
