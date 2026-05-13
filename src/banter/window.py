@@ -5,7 +5,6 @@ from gi.repository import Gtk, Adw, GLib, Gio, Gdk, Pango
 
 from .constants import APP_ID, APP_NAME, DEMO, esc
 from .async_utils import run_in_background
-from .config import Config
 from .api import GroupMeAPI
 from .push import GroupMePush
 from .notifications import NotificationDispatcher
@@ -65,7 +64,7 @@ class BanterWindow(Adw.ApplicationWindow):
 
     def __init__(self, app):
         super().__init__(application=app)
-        self._config       = Config()
+        self._config       = app.config
         self._notifications = NotificationDispatcher(app, self._config)
         self._api          = None
         self._current_user = None

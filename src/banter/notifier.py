@@ -19,7 +19,6 @@ from gi.repository import GLib
 
 from .api import GroupMeAPI
 from .async_utils import run_in_background
-from .config import Config
 from .constants import DEMO
 from .helpers import is_hidden_system_message, format_preview
 from .notifications import NotificationDispatcher
@@ -33,7 +32,7 @@ log = logging.getLogger(__name__)
 class BanterNotifier:
     def __init__(self, app):
         self._app           = app
-        self._config        = Config()
+        self._config        = app.config
         self._notifications = NotificationDispatcher(app, self._config)
         self._api           = None
         self._push          = None

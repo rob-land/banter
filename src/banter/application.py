@@ -29,6 +29,15 @@ class BanterApplication(Adw.Application):
         and wire up the 'activate' action used by notification default-action."""
         Adw.Application.do_startup(self)
 
+        # Single Config owned by the app — every component that needs
+        # accounts / prefs / mutes pulls this same instance. Config
+        # has no on-disk reload path, so two instances diverge the
+        # moment one writes; the previous "every component calls
+        # Config()" pattern bit us on the Preferences dialog and
+        # would have re-bit us anywhere notifier + window ever ran
+        # concurrently.
+        self.config = Config()
+
         self.runner = BackgroundRunner(name="banter-bg")
 
         activate_action = Gio.SimpleAction.new("activate", None)
@@ -185,13 +194,8 @@ class BanterApplication(Adw.Application):
         win.present()
 
     def _show_preferences(self, *_):
-        # Reuse the window's Config so pref writes are visible to the
-        # close-to-background handler without a process restart. Config
-        # has no on-disk reload path, so two Config() instances drift
-        # the moment one of them writes.
         from .dialogs.preferences import PreferencesDialog
-        cfg = self._window._config if self._window else Config()
-        dlg = PreferencesDialog(cfg)
+        dlg = PreferencesDialog(self.config)
         dlg.present(self._window)
 
 
