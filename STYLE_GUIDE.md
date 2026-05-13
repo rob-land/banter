@@ -183,6 +183,48 @@ features (e.g. `devices/`, `discovery/`, `pages/`, `widgets/`,
   `Gtk.Template(resource_path='/land/rob/<project>/ui/foo.ui')`
   works in Python.
 
+## Adaptive shell
+
+Pick a shell based on what the app actually does, not as a uniform
+mandate:
+
+- **List + detail apps** (a persistent list/selection alongside a
+  detail view of one selected thing) use `Adw.NavigationSplitView`
+  or `Adw.OverlaySplitView`. The breakpoint at `max-width: 600sp`
+  collapses the split on narrow widths so the same code works on
+  phone and desktop without per-form-factor branches:
+
+  ```
+  content: Adw.NavigationSplitView nav_split {
+    sidebar: Adw.NavigationPage { ... };
+    content: Adw.NavigationPage { ... };
+  };
+
+  Adw.Breakpoint {
+    condition ("max-width: 600sp")
+    setters {
+      nav_split.collapsed: true;
+    }
+  }
+  ```
+
+  Cohort examples: banter (chats sidebar + chat content), jamjar
+  (library sidebar + now-playing content), coffer (vault categories
+  + item detail).
+
+- **Single-task, kiosk, single-stream, or webview-wrapping apps**
+  stay single-pane. The list/detail criterion doesn't apply.
+  Cohort examples: couch (TV kiosk), roam (live tracker — one
+  stream of state), tock (one watch at a time), tonic (cadence
+  drill loop), homie (HA dashboard webview; HA already provides
+  its own sidebar inside).
+
+The criterion that actually decides: *does the app have a long-lived
+list/selection alongside a detail view of one selected thing?*
+Yes → split. No → single-pane. The other questions (desktop vs.
+mobile, breakpoints, narrow handling) are downstream of that
+answer — `NavigationSplitView` handles them once.
+
 ## Flatpak
 
 - Manifest at `build-aux/flatpak/land.rob.<project>.json` (JSON, not
