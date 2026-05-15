@@ -38,6 +38,7 @@ py_conf.set_quoted('LOCALEDIR',  localedir)
 subdir('data')
 subdir('src')
 subdir('po')
+subdir('tests')
 
 gnome.post_install(
   glib_compile_schemas:    true,
