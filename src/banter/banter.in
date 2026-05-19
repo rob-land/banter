@@ -13,6 +13,12 @@ gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
 gi.require_version('GdkPixbuf', '2.0')
 gi.require_version('Gst', '1.0')
+# Secret is an optional dependency — typelib may be absent in minimal
+# sandboxes; secrets.py falls back to plaintext if the import fails.
+try:
+    gi.require_version('Secret', '1')
+except ValueError:
+    pass
 from gi.repository import Gio
 
 resource_path = os.path.join(pkgdatadir, 'land.rob.banter.gresource')

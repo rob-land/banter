@@ -40,7 +40,6 @@ src/
 ├── background_portal.py  org.freedesktop.portal.Background helper for autostart toggle
 ├── config.py           Accounts and preferences (multi-account support)
 ├── constants.py        APP_ID, APP_VERSION, DEBUG/DEMO/BACKGROUND flags, dbg()/log() helpers, OAUTH_PORT
-├── css.py              Application stylesheet (inline CSS string)
 ├── helpers.py          Image loading and caching
 ├── mock_api.py         Demo-mode fixture used by --demo (no network)
 ├── notifications.py    NotificationDispatcher — Gio.Notification I/O + mute/call-event routing

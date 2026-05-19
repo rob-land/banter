@@ -57,7 +57,8 @@ class BanterNotifier:
         if not acc or not acc.get("token"):
             log.info("banter --background: no active account, exiting")
             return False
-        self._api = GroupMeAPI(acc["token"])
+        self._api = GroupMeAPI(acc["token"],
+                                on_unauthorized=self._on_session_expired)
 
         def verify():
             try:
@@ -74,6 +75,22 @@ class BanterNotifier:
         if self._push:
             self._push.stop()
             self._push = None
+
+    def _on_session_expired(self):
+        # Fired by GroupMeAPI on 401 from a worker thread. Headless mode
+        # has no sign-in surface to re-prompt, so tear everything down
+        # and release the app's hold; the user can re-auth next time
+        # they open the window.
+        GLib.idle_add(self._handle_session_expired)
+
+    def _handle_session_expired(self):
+        # Headless mode is the only thing holding the app alive, so
+        # quitting drops the hold cleanly; the user can re-auth next
+        # time they launch banter.
+        log.info("notifier: token rejected (401), stopping background daemon")
+        self.stop()
+        self._app.quit()
+        return False
 
     def _on_verified(self, me: dict):
         if not me:

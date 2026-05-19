@@ -1,7 +1,3 @@
-
-import logging
-
-log = logging.getLogger(__name__)
 """Banter — libsecret wrapper for OAuth tokens.
 
 Stores GroupMe tokens in the desktop keyring (gnome-keyring,
@@ -15,10 +11,11 @@ broken keyring daemon, missing D-Bus access in a sandboxed runtime
 raising, so the caller can fall back to the legacy plaintext field.
 """
 
+import logging
+
+log = logging.getLogger(__name__)
 
 try:
-    import gi
-    gi.require_version("Secret", "1")
     from gi.repository import Secret
     _AVAILABLE = True
 except (ValueError, ImportError) as e:

@@ -304,7 +304,7 @@ class BanterWindow(Adw.ApplicationWindow):
                                 on_online=self._on_api_online,
                                 on_offline=self._on_api_offline)
         self._config.add_account(token, user)
-        self._build_main_ui(user)
+        self._enter_main(user)
 
     def _on_session_expired(self):
         """Fired by GroupMeAPI when a token-bearing request returns 401.
@@ -1558,7 +1558,10 @@ class BanterWindow(Adw.ApplicationWindow):
                 self._sign_out()
                 return
             self._config.set_active_account(acc["user_id"])
-            self._api = GroupMeAPI(acc["token"])
+            self._api = GroupMeAPI(acc["token"],
+                                    on_unauthorized=self._on_session_expired,
+                                    on_online=self._on_api_online,
+                                    on_offline=self._on_api_offline)
 
             def reload():
                 me = self._api.get_me()
