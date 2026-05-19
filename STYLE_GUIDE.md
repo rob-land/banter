@@ -1,9 +1,11 @@
 # Project Style Guide
 
-Conventions Claude follows for native GNOME / Phosh apps in this
-collection (banter, clicker, finlit, jamjar, tonic). Drop this file
-into a new project alongside `CLAUDE.md` so Claude follows the same
-patterns from day one.
+Conventions for native GNOME / Phosh apps in this collection (banter,
+clicker, finlit, jamjar, tonic). The goal is well-structured, readable
+code that follows idiomatic Python (PEP 8) and GNOME / libadwaita
+conventions; this guide encodes the cohort-specific patterns layered
+on top. Drop this file into a new project alongside `CLAUDE.md` so
+those patterns apply from day one.
 
 ## Identity
 
@@ -374,12 +376,11 @@ threads when the shared runner will do.
 
 ## Documentation
 
-- **README.md** — public-facing. Disclosure that the code is written
-  by Claude. Features, install, build, layout reminder, license
-  pointer.
+- **README.md** — public-facing. Features, install, build, layout
+  reminder, license pointer.
 - **CLAUDE.md** — committed (no identifying info — no real
   hostnames, IPs, emails, paths with `/home/rob/`). Sections:
-  *What this project is*, *Tech stack*, *Source layout*,
+  *What this project is*, *Code quality*, *Tech stack*, *Source layout*,
   *Build workflow*, *Key conventions*, *Things to watch out for*.
 - **DESIGN.md** — optional architecture overview. The "why" of the
   project: pedagogy, stack, design decisions, state machine. Tonic
