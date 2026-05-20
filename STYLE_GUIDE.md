@@ -78,6 +78,16 @@ The Python package lives under `src/<package>/`. Subpackages group
 features (e.g. `devices/`, `discovery/`, `pages/`, `widgets/`,
 `dialogs/`). Tests live in `tests/` if present; never in `src/`.
 
+**Files should be no longer than they need to be.** When a module
+accumulates multiple distinct concerns or grows past ~500 lines, split
+it into focused submodules. A long file is a structural smell, not a
+tradeoff — the cohort has several god modules from earlier iterations
+(`chat_view.py`, `playback.py`, `vault_page.py`, `window.py` in
+several projects) that are slated for breakup; don't add to that
+list. Default to one purpose per file: a widget per file, a dialog
+per file, a controller per file. Splitting before the file is painful
+is cheaper than splitting after.
+
 ## Build system
 
 - **Meson + Ninja**. Canonical root `meson.build`:
@@ -390,6 +400,13 @@ them alone.
 
 ## Imports and Python conventions
 
+- **Follow PEP 8.** It's the baseline; this section layers
+  cohort-specific conventions on top. If you're unsure how to format
+  something, check PEP 8 first. Notable defaults that align: 4-space
+  indents, imports grouped (stdlib / third-party / local) at the top
+  of the module, `snake_case` for functions and variables,
+  `PascalCase` for classes, two blank lines between top-level
+  definitions.
 - **Single-entry `gi.require_version`**: declare the required GI
   versions exactly once at the application entry point (the launcher
   `<project>.in` and/or `main.py`), before any `from gi.repository`
