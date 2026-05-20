@@ -51,7 +51,6 @@ dialog_sources = files(
   'dialogs/__init__.py',
   'dialogs/accounts.py',
   'dialogs/events.py',
-  'dialogs/gallery.py',
   'dialogs/group.py',
   'dialogs/jump_to_date.py',
   'dialogs/members.py',
@@ -61,6 +60,16 @@ dialog_sources = files(
   'dialogs/settings.py',
 )
 
+gallery_sources = files(
+  'dialogs/gallery/__init__.py',
+  'dialogs/gallery/_helpers.py',
+  'dialogs/gallery/album_creator.py',
+  'dialogs/gallery/album_picker.py',
+  'dialogs/gallery/album_view.py',
+  'dialogs/gallery/gallery.py',
+)
+
 python.install_sources(banter_sources + [const_py], subdir: 'banter')
-python.install_sources(widget_sources,  subdir: 'banter/widgets')
-python.install_sources(dialog_sources,  subdir: 'banter/dialogs')
+python.install_sources(widget_sources,   subdir: 'banter/widgets')
+python.install_sources(dialog_sources,   subdir: 'banter/dialogs')
+python.install_sources(gallery_sources,  subdir: 'banter/dialogs/gallery')
