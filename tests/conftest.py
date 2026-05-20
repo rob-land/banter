@@ -135,18 +135,19 @@ class MockHTTP:
 
 @pytest.fixture
 def http(monkeypatch) -> MockHTTP:
-    """Replace `banter.api.urllib.request.urlopen` with a MockHTTP for
-    the duration of one test. Returns the MockHTTP so the test can
-    queue responses + assert on captured calls.
+    """Replace `urllib.request.urlopen` with a MockHTTP for the
+    duration of one test. Returns the MockHTTP so the test can queue
+    responses + assert on captured calls.
     """
-    import banter.api as api_mod
+    # The api package was split into mixins under banter/api/; _req
+    # lives in _core.py, and `upload_image` / `upload_file` /
+    # download paths live in media.py. Patch the canonical
+    # `urllib.request.urlopen` so every module that imported
+    # `urllib.request` sees the mock through its module-level binding.
+    from banter.api import _core as api_core
     mock = MockHTTP()
-    monkeypatch.setattr(api_mod.urllib.request, "urlopen", mock)
-    # The other modules that import urlopen (helpers.py for image
-    # cache) read it through `urllib.request` too — patching the
-    # canonical module-level binding keeps them consistent.
     monkeypatch.setattr("urllib.request.urlopen", mock)
     # Make retries instant so we don't `time.sleep` through the
     # backoff in tests.
-    monkeypatch.setattr(api_mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(api_core.time, "sleep", lambda _s: None)
     return mock

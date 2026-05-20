@@ -16,7 +16,6 @@ const_py = configure_file(
 banter_sources = files(
   '__init__.py',
   'application.py',
-  'api.py',
   'async_utils.py',
   'background_portal.py',
   'config.py',
@@ -69,7 +68,17 @@ gallery_sources = files(
   'dialogs/gallery/gallery.py',
 )
 
+api_sources = files(
+  'api/__init__.py',
+  'api/_core.py',
+  'api/dms.py',
+  'api/extras.py',
+  'api/groups.py',
+  'api/media.py',
+)
+
 python.install_sources(banter_sources + [const_py], subdir: 'banter')
+python.install_sources(api_sources,      subdir: 'banter/api')
 python.install_sources(widget_sources,   subdir: 'banter/widgets')
 python.install_sources(dialog_sources,   subdir: 'banter/dialogs')
 python.install_sources(gallery_sources,  subdir: 'banter/dialogs/gallery')
