@@ -1,10 +1,10 @@
 """Banter — EventCard: inline calendar event preview inside a message bubble."""
 
-from gi.repository import Gtk, Adw, GLib, Gdk, Pango
+from gi.repository import Gdk, GLib, Gtk, Pango
 
-from ..constants import esc
 from ..async_utils import run_in_background
-from ..dialogs.events import _fmt_event_time, EventDetailDialog
+from ..constants import esc
+from ..dialogs.events import EventDetailDialog, _fmt_event_time
 
 
 class EventCard(Gtk.Box):

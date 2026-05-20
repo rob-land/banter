@@ -1,12 +1,11 @@
 """Banter — ConversationRow and related sidebar row widgets."""
 
 from datetime import datetime
-from gi.repository import Gtk, Adw
+
+from gi.repository import Adw, Gtk
 
 from ..constants import esc
-from ..config import Config
-from ..helpers import set_avatar_from_url, format_preview
-
+from ..helpers import format_preview, set_avatar_from_url
 
 # ─────────────────────────── Group Row ───────────────────────────
 

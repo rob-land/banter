@@ -8,17 +8,16 @@ GroupMe app registration at dev.groupme.com should set Callback URL to:
   http://localhost:7654
 """
 
+import http.server
+import logging
 import threading
 import urllib.parse
-import http.server
 
-from gi.repository import Gtk, Adw, GLib, Gio
+from gi.repository import Adw, Gio, GLib, Gtk
 
-from .constants import OAUTH_AUTHORIZE_URL, OAUTH_PORT, APP_NAME
-from .async_utils import run_in_background
 from .api import GroupMeAPI
-
-import logging
+from .async_utils import run_in_background
+from .constants import APP_NAME, OAUTH_AUTHORIZE_URL, OAUTH_PORT
 
 log = logging.getLogger(__name__)
 

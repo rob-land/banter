@@ -18,11 +18,11 @@ call sites don't have to learn a new API.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Callable
+from typing import Any
 
 from gi.repository import Adw, GLib
-
 
 log = logging.getLogger(__name__)
 

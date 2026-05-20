@@ -1,14 +1,14 @@
 """Banter — Adw.Application subclass and entry point."""
 
-import sys
 import logging
+import sys
 from pathlib import Path
 
-from gi.repository import Gtk, Adw, Gdk, Gio, GLib
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from .async_utils import BackgroundRunner
 from .config import Config
-from .constants import APP_ID, APP_NAME, APP_VERSION, BACKGROUND, CONFIG_DIR, CACHE_DIR
+from .constants import APP_ID, APP_NAME, APP_VERSION, BACKGROUND, CACHE_DIR, CONFIG_DIR
 from .logging_setup import configure_logging
 from .notifier import BanterNotifier
 from .window import BanterWindow

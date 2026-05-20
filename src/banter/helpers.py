@@ -1,15 +1,14 @@
 """Banter — image loading/caching and avatar utilities."""
 
 import hashlib
+import logging
 import threading
 import urllib.request
 
-from gi.repository import Gtk, Adw, GLib, Gdk, GdkPixbuf
+from gi.repository import Adw, Gdk, GdkPixbuf, GLib, Gtk
 
-from .constants import CACHE_DIR, APP_VERSION
 from .async_utils import run_in_background
-
-import logging
+from .constants import APP_VERSION, CACHE_DIR
 
 log = logging.getLogger(__name__)
 

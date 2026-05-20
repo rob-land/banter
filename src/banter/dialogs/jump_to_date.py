@@ -1,8 +1,10 @@
 """Banter — JumpToDateDialog: pick a calendar date to scroll the active
 conversation back to."""
 
-from datetime import date as _date, datetime
-from gi.repository import Gtk, Adw
+from datetime import date as _date
+from datetime import datetime
+
+from gi.repository import Adw, Gtk
 
 
 @Gtk.Template(resource_path="/land/rob/banter/ui/jump-to-date-dialog.ui")

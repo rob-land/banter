@@ -21,13 +21,13 @@ sys.argv = [sys.argv[0]] + [
 ]
 
 # ── App identity ─────────────────────────────────────────────────────
-from .const import APP_ID, APP_NAME, VERSION as APP_VERSION
 
 # ── Paths ────────────────────────────────────────────────────────────
 # Respect XDG Base Directory spec — Flatpak sets these env vars to point
 # inside its sandbox, so hardcoding ~/.config would resolve to the
 # read-only host path instead of the writable sandbox location.
 import os as _os
+
 _xdg_config = Path(_os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 _xdg_cache  = Path(_os.environ.get("XDG_CACHE_HOME",  Path.home() / ".cache"))
 CONFIG_DIR  = _xdg_config / "banter"

@@ -1,5 +1,6 @@
 """Banter — ChatView: message list + compose bar."""
 
+import logging
 import mimetypes
 import os
 import tempfile
@@ -7,16 +8,15 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from gi.repository import Gtk, Adw, GLib, Gdk, Gst
 
-from ..async_utils import run_in_background
+from gi.repository import Adw, Gdk, GLib, Gst, Gtk
+
 from ..api import GroupMeAPI
+from ..async_utils import run_in_background
 from ..helpers import is_hidden_system_message
-from .mention_popover import MentionPopover, EVERYONE_ID
+from .mention_popover import EVERYONE_ID, MentionPopover
 from .message_bubble import MessageBubble
 from .misc import DateSeparator
-
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -91,8 +91,8 @@ class ChatView(Gtk.Box):
         # sent — at send time we read each pair of marks to recover
         # the (offset, length) for the mentions attachment, which
         # survives intermediate edits to the surrounding text.
-        self._mention_anchor: "Gtk.TextMark | None" = None
-        self._mention_popover: "MentionPopover | None" = None
+        self._mention_anchor: Gtk.TextMark | None = None
+        self._mention_popover: MentionPopover | None = None
         self._pending_mentions: list = []
         # Guard: set while we're driving the buffer ourselves (e.g.
         # replacing `@prefix` with `@<full name>`). Suppresses the

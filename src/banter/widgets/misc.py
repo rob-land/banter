@@ -1,18 +1,21 @@
 """Banter — miscellaneous reusable widgets (LoadingRow, ImageAttachment, VideoAttachment, VoiceAttachment, FileAttachment, DateSeparator)."""
 
 import json
+import logging
 import urllib.request
 from datetime import datetime
-from gi.repository import Gtk, Adw, GLib, Gdk, Gio
 
-from ..constants import CACHE_DIR
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+
 from ..async_utils import run_in_background
+from ..constants import CACHE_DIR
 from ..helpers import (
-    load_texture_async, load_audio_async, load_video_async, _cache_key,
+    _cache_key,
+    load_audio_async,
+    load_texture_async,
+    load_video_async,
 )
 from .base import StandardDialog
-
-import logging
 
 log = logging.getLogger(__name__)
 

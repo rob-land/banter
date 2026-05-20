@@ -15,16 +15,16 @@ conv_key → message_id watermark across runs, so a reboot doesn't
 reset the "new since I last looked" boundary.
 """
 
+import logging
+
 from gi.repository import GLib
 
 from .api import GroupMeAPI
 from .async_utils import run_in_background
 from .constants import DEMO
-from .helpers import is_hidden_system_message, format_preview
+from .helpers import format_preview, is_hidden_system_message
 from .notifications import NotificationDispatcher
 from .push import GroupMePush
-
-import logging
 
 log = logging.getLogger(__name__)
 

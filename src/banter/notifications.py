@@ -9,9 +9,9 @@ for call-event notifications pass them in directly rather than relying
 on a sidebar row lookup.
 """
 
-from gi.repository import Gio
-
 import logging
+
+from gi.repository import Gio
 
 log = logging.getLogger(__name__)
 

@@ -1,9 +1,9 @@
 """Banter — AlbumCard: inline album preview inside a message bubble."""
 
-from gi.repository import Gtk, Adw, GLib, GdkPixbuf, Gdk, Pango
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango
 
-from ..constants import esc
 from ..async_utils import run_in_background
+from ..constants import esc
 from ..helpers import load_image_async
 
 

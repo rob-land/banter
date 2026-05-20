@@ -1,7 +1,6 @@
 """Banter — MentionPopover: @-mention autocomplete for the compose bar."""
 
-from gi.repository import Gtk, GObject
-
+from gi.repository import GObject, Gtk
 
 # Sentinel used as the user_id for the synthetic "@everyone" entry.
 # ChatView resolves this to the full member list when building the

@@ -2,7 +2,7 @@
 
 import time
 
-from gi.repository import Gtk, Adw, GLib, Gdk
+from gi.repository import Adw, Gdk, GLib, Gtk
 
 from ..async_utils import run_in_background
 

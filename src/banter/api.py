@@ -1,19 +1,22 @@
 """Banter — GroupMe REST API client."""
 
 import json
+import logging
 import mimetypes
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
-import urllib.parse
-import urllib.error
 
 from .constants import (
-    GROUPME_API, GROUPME_IMAGE, GROUPME_POWERUPS, GROUPME_FILE,
-    APP_VERSION, DEBUG,
+    APP_VERSION,
+    DEBUG,
+    GROUPME_API,
+    GROUPME_FILE,
+    GROUPME_IMAGE,
+    GROUPME_POWERUPS,
 )
-
-import logging
 
 log = logging.getLogger(__name__)
 

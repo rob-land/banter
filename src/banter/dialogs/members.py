@@ -1,9 +1,9 @@
 """Banter — MembersDialog."""
 
-from gi.repository import Gtk, Adw, GLib
+from gi.repository import Adw, GLib, Gtk
 
-from ..constants import esc
 from ..async_utils import run_in_background
+from ..constants import esc
 from ..helpers import set_avatar_from_url
 
 

@@ -24,14 +24,13 @@ contract — 0 = success, 2 = failure — so the existing toggle UI
 that rolls back on non-zero still works without changes.
 """
 
+import logging
 import os
 from pathlib import Path
 
 from gi.repository import GLib
 
 from .constants import APP_ID, APP_NAME
-
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ def autostart_commandline() -> list:
     the host autostart .desktop must wrap the call in `flatpak run`,
     since the host's PATH has no `banter` binary."""
     if os.path.exists("/.flatpak-info"):
-        return ["flatpak", "run", f"--command=banter", APP_ID, "--background"]
+        return ["flatpak", "run", "--command=banter", APP_ID, "--background"]
     return ["banter", "--background"]
 
 

@@ -23,7 +23,6 @@ import sys
 
 from gi.repository import GLib
 
-
 _LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 _DATE_FORMAT = "%H:%M:%S"
 _LOG_FILE_BYTES = 512 * 1024

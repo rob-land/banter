@@ -7,10 +7,11 @@ Backed by the undocumented v3 endpoints captured from web.groupme.com:
 """
 
 from datetime import datetime
-from gi.repository import Gtk, Adw, GLib
 
-from ..constants import esc
+from gi.repository import Adw, GLib, Gtk
+
 from ..async_utils import run_in_background
+from ..constants import esc
 from ..helpers import set_avatar_from_url
 from ..widgets.base import StandardDialog
 

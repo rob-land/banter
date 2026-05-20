@@ -1,10 +1,11 @@
 """Banter — PollCard: inline poll preview inside a message bubble."""
 
 import time
-from gi.repository import Gtk, Adw, GLib, Gdk, Pango
 
-from ..constants import esc
+from gi.repository import GLib, Gtk, Pango
+
 from ..async_utils import run_in_background
+from ..constants import esc
 
 
 def _fmt_status(poll: dict) -> str:

@@ -1,6 +1,6 @@
 """Banter — EditProfileDialog: edit the signed-in user's GroupMe profile."""
 
-from gi.repository import Gtk, Adw, GLib, Gdk
+from gi.repository import Adw, GLib, Gtk
 
 from ..async_utils import run_in_background
 from ..helpers import set_avatar_from_url

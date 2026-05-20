@@ -7,7 +7,7 @@ pieces explicit (callers can grab the inner Box and append rows) but
 removes the boilerplate.
 """
 
-from gi.repository import Gtk, Adw
+from gi.repository import Adw, Gtk
 
 
 class StandardDialog(Adw.Dialog):

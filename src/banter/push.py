@@ -1,22 +1,19 @@
 """Banter — Faye/Bayeux WebSocket push client for GroupMe real-time events."""
 
-import json
-import os
-import ssl
-import socket
-import time
 import base64
-import zlib
 import hashlib
+import json
+import logging
+import os
+import socket
+import ssl
 import threading
-import urllib.request
-import urllib.parse
+import time
+import zlib
 
 from gi.repository import GLib
 
 from .constants import APP_VERSION
-
-import logging
 
 log = logging.getLogger(__name__)
 

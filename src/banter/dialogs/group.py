@@ -1,9 +1,9 @@
 """Banter — NewGroupDialog, ContactDetailDialog, AddToGroupDialog."""
 
-from gi.repository import Gtk, Adw, GLib, Gio, Gdk
+from gi.repository import Adw, Gio, GLib, Gtk
 
-from ..constants import esc
 from ..async_utils import run_in_background
+from ..constants import esc
 from ..helpers import set_avatar_from_url
 from ..widgets.base import StandardDialog
 

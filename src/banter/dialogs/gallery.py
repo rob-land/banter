@@ -1,12 +1,15 @@
 """Banter — GalleryDialog (group image gallery)."""
 
-import shutil
+import logging
 from datetime import datetime
-from gi.repository import Gtk, Adw, GLib, Gio, Gdk, GdkPixbuf, Pango
 
-from ..constants import esc, CACHE_DIR
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
+
+log = logging.getLogger(__name__)
+
 from ..async_utils import run_in_background
-from ..helpers import load_image_async, _cache_key
+from ..constants import CACHE_DIR, esc
+from ..helpers import _cache_key, load_image_async
 from ..widgets.base import StandardDialog
 from ..widgets.misc import VideoAttachment
 

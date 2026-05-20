@@ -1,32 +1,35 @@
 """Banter — BanterWindow: the application's primary window."""
 
+import logging
 import time
-from gi.repository import Gtk, Adw, GLib, Gio, Gdk, Pango
 
-from .constants import APP_ID, APP_NAME, DEMO, esc
-from .async_utils import run_in_background
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
+
 from .api import GroupMeAPI
-from .push import GroupMePush
-from .notifications import NotificationDispatcher
-from .mock_api import MockGroupMeAPI
-from .helpers import (
-    set_avatar_from_url, ensure_packs_loaded, is_hidden_system_message,
-    format_preview)
-from .widgets.base import StandardDialog
-from .widgets.conversation_row import ConversationRow, ContactRow
-from .widgets.chat_view import ChatView
-from .oauth import LoginDialog
+from .async_utils import run_in_background
+from .constants import APP_ID, APP_NAME, DEMO, esc
 from .dialogs.accounts import AccountsDialog
-from .dialogs.group import NewGroupDialog, ContactDetailDialog
-from .dialogs.members import MembersDialog
-from .dialogs.settings import GroupSettingsDialog
+from .dialogs.events import CreateEventDialog, CreatePollDialog, EventsListDialog
 from .dialogs.gallery import GalleryDialog
-from .dialogs.events import CreateEventDialog, EventsListDialog, CreatePollDialog
+from .dialogs.group import ContactDetailDialog, NewGroupDialog
+from .dialogs.jump_to_date import JumpToDateDialog
+from .dialogs.members import MembersDialog
 from .dialogs.pinned import PinnedDialog
 from .dialogs.profile import EditProfileDialog
-from .dialogs.jump_to_date import JumpToDateDialog
-
-import logging
+from .dialogs.settings import GroupSettingsDialog
+from .helpers import (
+    ensure_packs_loaded,
+    format_preview,
+    is_hidden_system_message,
+    set_avatar_from_url,
+)
+from .mock_api import MockGroupMeAPI
+from .notifications import NotificationDispatcher
+from .oauth import LoginDialog
+from .push import GroupMePush
+from .widgets.base import StandardDialog
+from .widgets.chat_view import ChatView
+from .widgets.conversation_row import ContactRow, ConversationRow
 
 log = logging.getLogger(__name__)
 
@@ -1400,7 +1403,6 @@ class BanterWindow(Adw.ApplicationWindow):
         area.set_halign(Gtk.Align.CENTER)
 
         def _draw(widget, cr, width, height):
-            import cairo
             cr.set_source_rgb(1, 1, 1)
             cr.paint()
             cr.set_source_rgb(0, 0, 0)

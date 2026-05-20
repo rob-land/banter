@@ -1,13 +1,12 @@
 """Banter — persistent configuration (accounts, preferences, mutes)."""
 
 import json
+import logging
 import os
 import time
 
-from .constants import CONFIG_DIR
 from . import secrets
-
-import logging
+from .constants import CONFIG_DIR
 
 log = logging.getLogger(__name__)
 

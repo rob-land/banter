@@ -1,9 +1,9 @@
 """Banter — AccountsDialog (multi-account switcher)."""
 
-from gi.repository import Gtk, Adw
+from gi.repository import Adw, Gtk
 
-from ..constants import esc
 from ..config import Config
+from ..constants import esc
 from ..helpers import set_avatar_from_url
 
 

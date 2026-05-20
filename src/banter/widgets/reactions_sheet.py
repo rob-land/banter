@@ -27,11 +27,11 @@ Layout (top → bottom):
 Picking any emoji toggles / replaces the user's reaction on the message.
 """
 
-from gi.repository import Gtk, Adw, GLib
+from gi.repository import Adw, GLib, Gtk
 
-from ..constants import DEFAULT_REACTIONS, esc
 from ..async_utils import run_in_background
-from ..helpers import get_all_packs, set_pack_emoji, load_image_async, pack_info
+from ..constants import DEFAULT_REACTIONS, esc
+from ..helpers import get_all_packs, load_image_async, pack_info, set_pack_emoji
 
 
 class ReactionsSheet(Adw.Dialog):

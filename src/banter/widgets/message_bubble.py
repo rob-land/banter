@@ -3,17 +3,16 @@
 import re
 import urllib.request
 from datetime import datetime
-from pathlib import Path
-from gi.repository import Gtk, Adw, GLib, Gdk, Gio, Pango
 
-from ..constants import DEBUG, esc, EMOJI_LOG
-from ..async_utils import run_in_background
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
+
 from ..api import GroupMeAPI
-from ..constants import CACHE_DIR
-from ..helpers import set_avatar_from_url, set_pack_emoji, _cache_key
-from .misc import ImageAttachment, VideoAttachment, VoiceAttachment, FileAttachment
-from .event_card import EventCard
+from ..async_utils import run_in_background
+from ..constants import CACHE_DIR, DEBUG, EMOJI_LOG, esc
+from ..helpers import _cache_key, set_avatar_from_url, set_pack_emoji
 from .album_card import AlbumCard
+from .event_card import EventCard
+from .misc import FileAttachment, ImageAttachment, VideoAttachment, VoiceAttachment
 from .poll_card import PollCard
 
 # ── URL / email linkification ─────────────────────────────────────────

@@ -1,12 +1,12 @@
 """Banter — CreateEventDialog, EventsListDialog, EventDetailDialog, CreatePollDialog."""
 
 from datetime import datetime, timezone
-from gi.repository import Gtk, Adw, GLib
 
-from ..constants import esc
+from gi.repository import Adw, GLib, Gtk
+
 from ..async_utils import run_in_background
+from ..constants import esc
 from ..widgets.base import StandardDialog
-
 
 # ─────────────────────────── Date/time helpers ───────────────────
 
