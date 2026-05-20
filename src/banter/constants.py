@@ -21,6 +21,11 @@ sys.argv = [sys.argv[0]] + [
 ]
 
 # ── App identity ─────────────────────────────────────────────────────
+# Re-exported from the Meson-generated const.py so the rest of the
+# package only ever talks to constants. (Ruff's F401 will want to
+# remove these as unused — keep them.)
+from .const import APP_ID, APP_NAME  # noqa: F401
+from .const import VERSION as APP_VERSION  # noqa: F401
 
 # ── Paths ────────────────────────────────────────────────────────────
 # Respect XDG Base Directory spec — Flatpak sets these env vars to point
