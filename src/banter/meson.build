@@ -29,7 +29,18 @@ banter_sources = files(
   'oauth.py',
   'push.py',
   'secrets.py',
-  'window.py',
+)
+
+window_sources = files(
+  'window/__init__.py',
+  'window/_actions.py',
+  'window/_bg_poll.py',
+  'window/_chat.py',
+  'window/_login.py',
+  'window/_mute.py',
+  'window/_push.py',
+  'window/_sidebar.py',
+  'window/window.py',
 )
 
 widget_sources = files(
@@ -103,6 +114,7 @@ api_sources = files(
 )
 
 python.install_sources(banter_sources + [const_py],   subdir: 'banter')
+python.install_sources(window_sources,          subdir: 'banter/window')
 python.install_sources(api_sources,             subdir: 'banter/api')
 python.install_sources(widget_sources,          subdir: 'banter/widgets')
 python.install_sources(chat_view_sources,       subdir: 'banter/widgets/chat_view')
