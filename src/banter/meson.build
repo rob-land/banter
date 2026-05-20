@@ -40,10 +40,20 @@ widget_sources = files(
   'widgets/conversation_row.py',
   'widgets/event_card.py',
   'widgets/mention_popover.py',
-  'widgets/message_bubble.py',
   'widgets/misc.py',
   'widgets/poll_card.py',
   'widgets/reactions_sheet.py',
+)
+
+message_bubble_sources = files(
+  'widgets/message_bubble/__init__.py',
+  'widgets/message_bubble/_context_menu.py',
+  'widgets/message_bubble/_reactions.py',
+  'widgets/message_bubble/_save_actions.py',
+  'widgets/message_bubble/_status.py',
+  'widgets/message_bubble/_text.py',
+  'widgets/message_bubble/bubble.py',
+  'widgets/message_bubble/edit_dialog.py',
 )
 
 dialog_sources = files(
@@ -77,8 +87,9 @@ api_sources = files(
   'api/media.py',
 )
 
-python.install_sources(banter_sources + [const_py], subdir: 'banter')
-python.install_sources(api_sources,      subdir: 'banter/api')
-python.install_sources(widget_sources,   subdir: 'banter/widgets')
-python.install_sources(dialog_sources,   subdir: 'banter/dialogs')
-python.install_sources(gallery_sources,  subdir: 'banter/dialogs/gallery')
+python.install_sources(banter_sources + [const_py],   subdir: 'banter')
+python.install_sources(api_sources,             subdir: 'banter/api')
+python.install_sources(widget_sources,          subdir: 'banter/widgets')
+python.install_sources(message_bubble_sources,  subdir: 'banter/widgets/message_bubble')
+python.install_sources(dialog_sources,          subdir: 'banter/dialogs')
+python.install_sources(gallery_sources,         subdir: 'banter/dialogs/gallery')
