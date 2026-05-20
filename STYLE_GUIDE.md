@@ -339,6 +339,55 @@ Don't sleep or block the GTK main loop. Don't call `requests` /
 `urllib` / `time.sleep` on the main thread. Don't spawn ad-hoc
 threads when the shared runner will do.
 
+## Application lifecycle
+
+A few `Gio.Application` / `Adw.ApplicationWindow` patterns the cohort
+has consistently got wrong; fix them once per project, then leave
+them alone.
+
+- **Persist window geometry with `get_width()` / `get_height()`**, not
+  `get_default_size()`. The latter returns the *configured default*
+  (last value passed to `set_default_size`), so any user resize is
+  silently discarded on close.
+  ```python
+  def _on_close_request(self, *_):
+      if not self.is_maximized():
+          self._settings.set_int('window-width',  self.get_width())
+          self._settings.set_int('window-height', self.get_height())
+      self._settings.set_boolean('window-maximized', self.is_maximized())
+  ```
+- **Register `--debug` (and any other custom flag) via
+  `add_main_option`.** With `HANDLES_COMMAND_LINE` set, an unknown
+  option is a hard error that aborts startup; without
+  `HANDLES_COMMAND_LINE`, `Gio.Application` strips unknown options
+  with a warning but `--help` won't list them. `configure_logging()`
+  reads `sys.argv` directly so the registration is just there to make
+  `Gio.Application` accept the flag and document it.
+  ```python
+  self.add_main_option(
+      'debug', ord('d'), GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
+      'Enable debug logging', None,
+  )
+  ```
+  Don't strip flags from `sys.argv` before `app.run()` — it bypasses
+  `--help` and hides what the binary accepts.
+- **Clear the `--background` flag on the second activation.** A
+  headless launch path that holds the app open should track its
+  state so a later notification click (which re-enters
+  `do_command_line` without `--background`) can promote out of
+  background mode and build the window.
+  ```python
+  def do_command_line(self, command_line):
+      opts = command_line.get_options_dict().end().unpack()
+      if opts.get('background'):
+          self._background = True
+          self.hold()
+      else:
+          self._background = False    # promote on the next activation
+          self.activate()
+      return 0
+  ```
+
 ## Imports and Python conventions
 
 - **Single-entry `gi.require_version`**: declare the required GI
@@ -367,10 +416,18 @@ threads when the shared runner will do.
   `log = logging.getLogger(__name__)` at the top; calls are
   `log.debug(...)` / `log.info(...)` / `log.exception('msg')`. Don't
   use bare `print()` in shipped code.
+- Use **`%`-style placeholders, not f-strings**, in log calls so the
+  formatting is skipped when the level is disabled:
+  ```python
+  log.debug('keypress %s -> %s', action, kc)   # right
+  log.debug(f'keypress {action} -> {kc}')      # wrong
+  ```
 - A `logging_setup.py` per project owns `configure_logging()`; main
-  calls it before anything else. Default level is INFO; `--debug` (or
-  `<APP>_DEBUG=1` in the environment) bumps to DEBUG. The setup
-  installs both a stderr stream and a rotating file handler under
+  calls it before anything else (not inside `do_command_line`, which
+  may run after import-time errors have already missed the file
+  handler). Default level is INFO; `--debug` (or `<APP>_DEBUG=1` in
+  the environment) bumps to DEBUG. The setup installs both a stderr
+  stream and a rotating file handler under
   `GLib.get_user_data_dir()/<project>/<project>.log` so Phosh users
   can read logs without `journalctl`.
 
