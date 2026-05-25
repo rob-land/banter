@@ -13,7 +13,7 @@ import logging
 import threading
 import urllib.parse
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from .api import GroupMeAPI
 from .async_utils import run_in_background
@@ -194,8 +194,17 @@ class LoginDialog(Adw.Dialog):
                     f"?client_id={BANTER_CLIENT_ID}"
                     f"&redirect_uri={urllib.parse.quote(OAUTH_CALLBACK)}")
         log.debug("LoginDialog: opening browser → %s", auth_url)
+
+        def _on_launch_done(launcher, result):
+            try:
+                launcher.launch_finish(result)
+            except Exception as e:
+                GLib.idle_add(self._on_oauth_error,
+                             f"Could not open browser: {e}")
+
         try:
-            Gio.AppInfo.launch_default_for_uri(auth_url, None)
+            launcher = Gtk.UriLauncher(uri=auth_url)
+            launcher.launch(self._parent, None, _on_launch_done)
         except Exception as e:
             self._on_oauth_error(f"Could not open browser: {e}")
 

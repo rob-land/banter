@@ -141,7 +141,7 @@ class BanterWindow(
             return
 
         acc = self._config.get_active_account()
-        if acc:
+        if acc and acc.get("token"):
             self._api = GroupMeAPI(acc["token"],
                                     on_unauthorized=self._on_session_expired,
                                     on_online=self._on_api_online,
@@ -162,7 +162,7 @@ class BanterWindow(
 
             run_in_background(verify)
         else:
-            self._go_login()
+            GLib.idle_add(self._go_login)
 
     # ── Template callbacks (wired up in data/ui/window.blp) ──
     @Gtk.Template.Callback()
