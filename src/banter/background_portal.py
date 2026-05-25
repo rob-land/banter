@@ -67,6 +67,8 @@ def _desktop_file_body(commandline: list) -> str:
         f"Exec={exec_line}\n"
         f"X-Flatpak={APP_ID}\n"
         "X-GNOME-Autostart-enabled=true\n"
+        "X-GNOME-Autostart-Phase=Applications\n"
+        "X-GNOME-Autostart-Delay=3\n"
         "NoDisplay=true\n"
     )
 

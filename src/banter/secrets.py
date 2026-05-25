@@ -12,6 +12,9 @@ raising, so the caller can fall back to the legacy plaintext field.
 """
 
 import logging
+import threading
+
+from gi.repository import Gio
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +26,7 @@ except (ValueError, ImportError) as e:
     Secret = None
     _AVAILABLE = False
 
+_TIMEOUT = 5
 
 _SCHEMA = None
 
@@ -42,6 +46,15 @@ def _schema():
     return _SCHEMA
 
 
+def _cancellable_with_timeout():
+    """Return a GCancellable that auto-cancels after _TIMEOUT seconds."""
+    cancel = Gio.Cancellable()
+    timer = threading.Timer(_TIMEOUT, cancel.cancel)
+    timer.daemon = True
+    timer.start()
+    return cancel, timer
+
+
 def is_available() -> bool:
     """True if libsecret is importable. Doesn't probe the daemon — that
     only happens on a real call."""
@@ -53,6 +66,7 @@ def store_token(user_id: str, name: str, token: str) -> bool:
     True on success."""
     if not _AVAILABLE:
         return False
+    cancel, timer = _cancellable_with_timeout()
     try:
         ok = Secret.password_store_sync(
             _schema(),
@@ -60,13 +74,15 @@ def store_token(user_id: str, name: str, token: str) -> bool:
             Secret.COLLECTION_DEFAULT,
             f"Banter token for {name or user_id}",
             token,
-            None,
+            cancel,
         )
         log.debug("secrets: stored token for %s → %s", user_id, ok)
         return bool(ok)
     except Exception as e:
         log.debug("secrets: store failed for %s: %s", user_id, e)
         return False
+    finally:
+        timer.cancel()
 
 
 def lookup_token(user_id: str):
@@ -74,14 +90,17 @@ def lookup_token(user_id: str):
     keyring unreachable."""
     if not _AVAILABLE:
         return None
+    cancel, timer = _cancellable_with_timeout()
     try:
         val = Secret.password_lookup_sync(
-            _schema(), {"user_id": str(user_id)}, None,
+            _schema(), {"user_id": str(user_id)}, cancel,
         )
         return val
     except Exception as e:
         log.debug("secrets: lookup failed for %s: %s", user_id, e)
         return None
+    finally:
+        timer.cancel()
 
 
 def clear_token(user_id: str) -> bool:
@@ -89,11 +108,14 @@ def clear_token(user_id: str) -> bool:
     (including the not-found case — idempotent removal)."""
     if not _AVAILABLE:
         return False
+    cancel, timer = _cancellable_with_timeout()
     try:
         Secret.password_clear_sync(
-            _schema(), {"user_id": str(user_id)}, None,
+            _schema(), {"user_id": str(user_id)}, cancel,
         )
         return True
     except Exception as e:
         log.debug("secrets: clear failed for %s: %s", user_id, e)
         return False
+    finally:
+        timer.cancel()
