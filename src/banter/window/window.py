@@ -358,6 +358,13 @@ class BanterWindow(
         ep_act.connect("activate", self._on_edit_profile)
         self.add_action(ep_act)
 
+        # Suite-standard window action: any child widget can fire a
+        # toast via widget.activate_action("win.toast", GLib.Variant("s", msg)).
+        toast_act = Gio.SimpleAction.new("toast", GLib.VariantType.new("s"))
+        toast_act.connect("activate",
+            lambda _a, p: self.toast_overlay.add_toast(Adw.Toast.new(p.get_string())))
+        self.add_action(toast_act)
+
     # ── Close-to-background ──
     def _on_close_request(self, *_):
         if not self._config.get_pref("close_to_background", False):
