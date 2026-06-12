@@ -18,20 +18,42 @@ class MembersDialog(Adw.PreferencesDialog):
         creator      = str(group.get("creator_user_id",""))
         self._is_owner = (creator == self._me)
 
+        # user_ids already in this group — excluded from contact suggestions
+        self._existing_ids = {
+            str(m.get("user_id","")) for m in group.get("members", [])}
+
+        # uid → a group the contact belongs to, shown as suggestion subtitle
+        # ("Rachel — Group X"). First group wins; cheap and good enough.
+        self._group_hint: dict = {}
+        for g in (getattr(parent, "_all_groups_with_members", None) or []):
+            gname = g.get("name","")
+            for m in (g.get("members") or []):
+                uid = str(m.get("user_id",""))
+                if uid and uid not in self._group_hint:
+                    self._group_hint[uid] = gname
+
         page = Adw.PreferencesPage()
         self.add(page)
 
         # ── Add member (owner only) ──
         # EntryRow's apply button (the inline ✓ arrow) is the HIG-native
-        # "submit this row" affordance; cleaner than a separate body
-        # button under the entry.
+        # "submit this row" affordance for the phone/email directory lookup;
+        # typing a name instead live-filters contacts from every group below.
         if self._is_owner:
             add_grp = Adw.PreferencesGroup(title="Add Member")
-            self._add_entry = Adw.EntryRow(title="Phone number or email")
+            self._add_entry = Adw.EntryRow(
+                title="Search contacts, or enter phone / email")
             self._add_entry.set_show_apply_button(True)
             self._add_entry.connect("apply", self._add_member)
+            self._add_entry.connect("changed", self._on_search_changed)
             add_grp.add(self._add_entry)
             page.add(add_grp)
+
+            # Contact suggestions, populated as the user types.
+            self._suggest_grp = Adw.PreferencesGroup()
+            self._suggest_grp.set_visible(False)
+            page.add(self._suggest_grp)
+            self._suggest_rows = []
 
         # ── Member list ──
         self._members_grp = Adw.PreferencesGroup(
@@ -96,6 +118,69 @@ class MembersDialog(Adw.PreferencesDialog):
 
             self._members_grp.add(row)
             self._member_rows.append(row)
+
+    def _on_search_changed(self, entry):
+        """Live-filter contacts from every group by name as the user types."""
+        for row in self._suggest_rows:
+            self._suggest_grp.remove(row)
+        self._suggest_rows = []
+
+        query = entry.get_text().strip().lower()
+        if not query:
+            self._suggest_grp.set_visible(False)
+            return
+
+        contacts = getattr(self._parent, "_all_contacts", None) or []
+        # Rank prefix matches ahead of mid-name (substring) matches.
+        prefix, substr = [], []
+        for c in contacts:
+            uid = str(c.get("user_id",""))
+            if not uid or uid in self._existing_ids:
+                continue
+            n_low = (c.get("name") or "").lower()
+            if n_low.startswith(query):
+                prefix.append(c)
+            elif query in n_low:
+                substr.append(c)
+
+        matches = (prefix + substr)[:8]
+        self._suggest_grp.set_visible(bool(matches))
+        for c in matches:
+            self._suggest_grp.add(self._make_suggest_row(c))
+
+    def _make_suggest_row(self, contact):
+        name = contact.get("name","?")
+        row = Adw.ActionRow(title=esc(name))
+        hint = self._group_hint.get(str(contact.get("user_id","")), "")
+        if hint:
+            row.set_subtitle(esc(hint))
+
+        av = Adw.Avatar(size=36, text=esc(name), show_initials=True)
+        set_avatar_from_url(av, contact.get("avatar_url",""))
+        row.add_prefix(av)
+        row.add_suffix(Gtk.Image.new_from_icon_name("list-add-symbolic"))
+
+        row.set_activatable(True)
+        row.connect("activated", lambda _r, c=contact: self._add_contact(c))
+        self._suggest_rows.append(row)
+        return row
+
+    def _add_contact(self, contact):
+        uid  = str(contact.get("user_id",""))
+        name = contact.get("name","")
+        if not uid:
+            return
+        # Suppress re-suggesting; clearing the entry also hides the list.
+        self._existing_ids.add(uid)
+        self._add_entry.set_text("")
+
+        def worker():
+            r = self._api.add_members(
+                self._group["id"], [{"user_id": uid, "nickname": name}])
+            GLib.idle_add(lambda: self._parent.toast(
+                f"Added {name}" if r else "Failed to add member"))
+
+        run_in_background(worker)
 
     def _add_member(self, *_):
         query = self._add_entry.get_text().strip()
