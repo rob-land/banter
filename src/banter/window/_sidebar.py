@@ -116,8 +116,26 @@ class SidebarMixin:
         self.split.set_show_content(True)
 
     # ── Contacts (populated from group members) ──
+    def ensure_contacts_loaded(self, on_done=None):
+        """Ensure the cross-group contact caches are populated.
+
+        Invokes on_done (on the main thread) once _all_contacts /
+        _all_groups_with_members are ready — immediately if they already
+        are, otherwise after a shared background fetch. Used by dialogs
+        (e.g. the Members add-contact search) that read these caches
+        before the user has visited the contacts tab."""
+        if self._all_contacts:
+            if on_done:
+                on_done()
+            return
+        if on_done:
+            self._contacts_loaded_cbs.append(on_done)
+        if not self._contacts_loading:
+            self._load_contacts()
+
     def _load_contacts(self):
         """Fetch group members in the background and populate the contacts tab."""
+        self._contacts_loading = True
         self.contacts_spinner.set_spinning(True)
         self.contacts_spinner.set_visible(True)
 
@@ -162,6 +180,11 @@ class SidebarMixin:
         self.contacts_spinner.set_spinning(False)
         self.contacts_spinner.set_visible(False)
         self._all_contacts = contacts
+        # Release any waiters parked in ensure_contacts_loaded().
+        self._contacts_loading = False
+        cbs, self._contacts_loaded_cbs = self._contacts_loaded_cbs, []
+        for cb in cbs:
+            cb()
         # Populate name cache from contact list
         for c in contacts:
             uid = str(c.get("user_id", ""))

@@ -25,12 +25,7 @@ class MembersDialog(Adw.PreferencesDialog):
         # uid → a group the contact belongs to, shown as suggestion subtitle
         # ("Rachel — Group X"). First group wins; cheap and good enough.
         self._group_hint: dict = {}
-        for g in (getattr(parent, "_all_groups_with_members", None) or []):
-            gname = g.get("name","")
-            for m in (g.get("members") or []):
-                uid = str(m.get("user_id",""))
-                if uid and uid not in self._group_hint:
-                    self._group_hint[uid] = gname
+        self._build_group_hint()
 
         page = Adw.PreferencesPage()
         self.add(page)
@@ -54,6 +49,11 @@ class MembersDialog(Adw.PreferencesDialog):
             self._suggest_grp.set_visible(False)
             page.add(self._suggest_grp)
             self._suggest_rows = []
+
+            # Contacts may not have loaded yet if the user hasn't opened the
+            # contacts tab; pull them in the background and refresh on arrival.
+            if not getattr(parent, "_all_contacts", None):
+                parent.ensure_contacts_loaded(self._on_contacts_ready)
 
         # ── Member list ──
         self._members_grp = Adw.PreferencesGroup(
@@ -118,6 +118,20 @@ class MembersDialog(Adw.PreferencesDialog):
 
             self._members_grp.add(row)
             self._member_rows.append(row)
+
+    def _build_group_hint(self):
+        for g in (getattr(self._parent, "_all_groups_with_members", None) or []):
+            gname = g.get("name","")
+            for m in (g.get("members") or []):
+                uid = str(m.get("user_id",""))
+                if uid and uid not in self._group_hint:
+                    self._group_hint[uid] = gname
+
+    def _on_contacts_ready(self):
+        """Contacts finished loading after the dialog opened — pick up the
+        group subtitles and re-run any in-progress search."""
+        self._build_group_hint()
+        self._on_search_changed(self._add_entry)
 
     def _on_search_changed(self, entry):
         """Live-filter contacts from every group by name as the user types."""

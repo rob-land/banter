@@ -92,6 +92,10 @@ class BanterWindow(
         self._all_groups_with_members : list = []
         self._all_dms      : list = []
         self._all_contacts : list = []
+        # Lazy-load coordination for the cross-group contact caches above:
+        # a load-in-flight guard plus callbacks to flush when it completes.
+        self._contacts_loading : bool = False
+        self._contacts_loaded_cbs : list = []
         # uid → display name cache, built from contacts + message senders
         self._name_cache   : dict = {}
         # Unified chats list (groups + DMs merged, sorted by recency)
