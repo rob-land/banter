@@ -86,6 +86,12 @@ class BackgroundPollMixin:
             last_id  = msgs.get("last_message_id")
             prev_id  = self._last_msg_ids.get(key)
 
+            # A group with no sidebar row is one we were added to since the
+            # last load — materialise it at the top. This is the catch-up
+            # path for when the push "you were added" event never arrived.
+            if row is None:
+                row = self._insert_group_row(g)
+
             if not (last_id and last_id != prev_id):
                 continue
             self._last_msg_ids[key] = last_id

@@ -8,6 +8,9 @@ based on `line.create` and `poll.vote` events.
 
 import logging
 
+from gi.repository import GLib
+
+from ..async_utils import run_in_background
 from ..constants import DEMO
 from ..helpers import format_preview, is_hidden_system_message
 from ..push import GroupMePush
@@ -88,6 +91,11 @@ class PushMixin:
         key = self._conv_key("group", gid)
         row = self._rows.get(key)
         if row is None:
+            # A push for a group we aren't tracking means we were just
+            # added to it. Fetch its details, drop a row at the top of
+            # the sidebar, then replay this event so the normal preview /
+            # unread / notification path runs against the new row.
+            self._fetch_new_group(gid, subject)
             return
         sender = subject.get("name", "")
         # Run preview text through format_preview so the server's
@@ -124,6 +132,33 @@ class PushMixin:
         self._send_desktop_notification(
             name, f"{sender}: {preview_text or '📎 attachment'}",
             tag=f"group-{gid}")
+
+    def _fetch_new_group(self, gid: str, subject: dict):
+        """Background-fetch a group we were just added to, then replay the
+        triggering push event once its sidebar row exists."""
+        if gid in self._pending_group_adds:
+            return   # a concurrent push already kicked off the fetch
+        self._pending_group_adds.add(gid)
+
+        def worker():
+            group = self._api.get_group(gid)
+            GLib.idle_add(self._on_new_group, gid, group, subject)
+
+        run_in_background(worker)
+
+    def _on_new_group(self, gid: str, group: dict, subject: dict):
+        self._pending_group_adds.discard(gid)
+        if self._conv_key("group", gid) in self._rows:
+            # A full refresh (or the bg poll) added it while we fetched.
+            self._handle_group_push_message(gid, subject)
+            return
+        if not group:
+            return
+        self._insert_group_row(group)
+        # Re-run the handler now that the row exists; it sets the preview,
+        # bumps unread and fires the desktop notification for the message
+        # that revealed the new group ("… added you to the group").
+        self._handle_group_push_message(gid, subject)
 
     def _handle_dm_push_message(self, subject: dict):
         """Real-time DM notification path. Without this, DMs only

@@ -115,6 +115,10 @@ class BanterWindow(
         # PollCards register on __init__; the list is cleared whenever a
         # new ChatView is built (the previous chat's cards die with it).
         self._poll_cards   : dict = {}
+        # group ids with an in-flight get_group() fetch after a push for a
+        # group we weren't tracking — dedupes concurrent "you were added"
+        # events so we don't insert the same sidebar row twice.
+        self._pending_group_adds : set = set()
         self._bg_poll_id   = None
         self._push         = None   # singleton GroupMePush for the whole session
         # Pending GLib.timeout id for the debounced offline-banner

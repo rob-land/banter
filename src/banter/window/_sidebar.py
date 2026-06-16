@@ -102,6 +102,38 @@ class SidebarMixin:
         if hasattr(self, '_chats_page'):
             self.chats_stack_page.set_needs_attention(total_unread > 0)
 
+    def _insert_group_row(self, group: dict):
+        """Add a single newly-joined group to the top of the chats list.
+
+        Used when we learn of a group we weren't tracking — from a push
+        ("you were added to …") or the background poll — without a full
+        sidebar rebuild. Idempotent: returns the existing row if we
+        already have one. Deliberately does NOT seed _last_msg_ids, so the
+        caller's notification path still treats the first message as new."""
+        gid = str(group.get("id", ""))
+        if not gid:
+            return None
+        key = self._conv_key("group", gid)
+        existing = self._rows.get(key)
+        if existing is not None:
+            return existing
+
+        me_id = (self._current_user or {}).get("id")
+        row = ConversationRow(group, "group", self._config, me_id=me_id)
+        self.chats_list.insert(row, 0)
+        self._rows[key] = row
+
+        # Keep the cached group list consistent so contact derivation and
+        # the next full rebuild both see the new group.
+        if not any(str(g.get("id", "")) == gid for g in self._all_groups):
+            self._all_groups.append(group)
+
+        # Subscribe for typing pulses / group-only events.
+        if self._push is not None:
+            self._push.subscribe_group(gid)
+
+        return row
+
     def _on_chats_activated(self, lb, row):
         if not isinstance(row, ConversationRow):
             return
