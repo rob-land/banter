@@ -41,29 +41,29 @@
   <screenshots>
     <screenshot type="default">
       <caption>Group chat with poll, @-mentions, and reactions</caption>
-      <image>https://codeberg.org/robland/banter/raw/branch/main/data/screenshots/desktop-park-day-crew-light.png</image>
+      <image>https://raw.githubusercontent.com/rob-land/banter/main/data/screenshots/desktop-park-day-crew-light.png</image>
     </screenshot>
     <screenshot>
       <caption>Adaptive layout — group chat on a Linux phone</caption>
-      <image>https://codeberg.org/robland/banter/raw/branch/main/data/screenshots/phone-castle-sleepover-dark.png</image>
+      <image>https://raw.githubusercontent.com/rob-land/banter/main/data/screenshots/phone-castle-sleepover-dark.png</image>
     </screenshot>
     <screenshot>
       <caption>Direct messages with emoji reactions, on a phone</caption>
-      <image>https://codeberg.org/robland/banter/raw/branch/main/data/screenshots/phone-mickey-hayes-dm-dark.png</image>
+      <image>https://raw.githubusercontent.com/rob-land/banter/main/data/screenshots/phone-mickey-hayes-dm-dark.png</image>
     </screenshot>
     <screenshot>
       <caption>Group conversation with stacked reactions</caption>
-      <image>https://codeberg.org/robland/banter/raw/branch/main/data/screenshots/desktop-castle-sleepover-light.png</image>
+      <image>https://raw.githubusercontent.com/rob-land/banter/main/data/screenshots/desktop-castle-sleepover-light.png</image>
     </screenshot>
     <screenshot>
       <caption>Contacts list and the profile editor sheet</caption>
-      <image>https://codeberg.org/robland/banter/raw/branch/main/data/screenshots/phone-contacts-edit-profile-light.png</image>
+      <image>https://raw.githubusercontent.com/rob-land/banter/main/data/screenshots/phone-contacts-edit-profile-light.png</image>
     </screenshot>
   </screenshots>
 
-  <url type="homepage">https://codeberg.org/robland/banter</url>
-  <url type="bugtracker">https://codeberg.org/robland/banter/issues</url>
-  <url type="vcs-browser">https://codeberg.org/robland/banter</url>
+  <url type="homepage">https://github.com/rob-land/banter</url>
+  <url type="bugtracker">https://github.com/rob-land/banter/issues</url>
+  <url type="vcs-browser">https://github.com/rob-land/banter</url>
 
   <developer id="land.rob">
     <name>Rob Daniel</name>
