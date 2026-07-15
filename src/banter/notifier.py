@@ -22,7 +22,8 @@ from gi.repository import GLib
 from .api import GroupMeAPI
 from .async_utils import run_in_background
 from .constants import DEMO
-from .helpers import format_preview, is_hidden_system_message
+from .helpers import (format_preview, is_hidden_system_message,
+                      resolve_group_last_message)
 from .notifications import NotificationDispatcher
 from .push import GroupMePush
 
@@ -200,14 +201,18 @@ class BanterNotifier:
 
     def _process_catch_up(self, groups, chats):
         first_run = not self._last_seen
-        me_id   = str((self._user or {}).get("id", ""))
-        my_name = (self._user or {}).get("name", "")
+        me_id = str((self._user or {}).get("id", ""))
 
         # Cache group names for push-event notifications first; this is
         # cheap and useful even on first-run (where we skip notifying).
         for g in groups:
             self._group_names[str(g["id"])] = g.get("name", "GroupMe")
 
+        # Groups with news are notified from their real newest message,
+        # not the index's preview blob — the preview skips system
+        # messages, so it's stale whenever the newest message is one
+        # (see resolve_group_last_message).
+        changed_groups = []
         for g in groups:
             gid = str(g["id"])
             key = f"group:{gid}"
@@ -221,16 +226,14 @@ class BanterNotifier:
             self._last_seen[key] = last_id
             if first_run:
                 continue
-            preview = msgs.get("preview", {}) or {}
-            sender = preview.get("nickname", "")
-            if my_name and sender == my_name:
-                continue
-            preview_text = format_preview(preview.get("text"),
-                                          preview.get("attachments"))
-            body = (f"{sender}: {preview_text or '📎 attachment'}"
-                    if sender else (preview_text or "📎 attachment"))
-            self._notifications.send(
-                g.get("name", "GroupMe"), body, tag=f"group-{gid}")
+            changed_groups.append(g)
+
+        if changed_groups:
+            def worker():
+                for g in changed_groups:
+                    msg = resolve_group_last_message(self._api, g)
+                    GLib.idle_add(self._notify_group_catch_up, g, msg)
+            run_in_background(worker)
 
         for chat in chats:
             other = chat.get("other_user", {}) or {}
@@ -258,6 +261,30 @@ class BanterNotifier:
                 tag=f"dm-{other_id}")
 
         self._save_last_seen()
+
+    def _notify_group_catch_up(self, g, msg):
+        """Fire the catch-up notification for one group once its real
+        newest message is known."""
+        if is_hidden_system_message(msg):
+            return
+        gid    = str(g["id"])
+        sender = msg.get("name", "")
+        # Self-echo filter: exact user_id match on full message
+        # objects, display-name heuristic on the preview fallback.
+        me_id     = str((self._user or {}).get("id", ""))
+        my_name   = (self._user or {}).get("name", "")
+        sender_id = str(msg.get("user_id") or msg.get("sender_id") or "")
+        if sender_id:
+            if me_id and sender_id == me_id:
+                return
+        elif my_name and sender == my_name:
+            return
+        preview_text = format_preview(msg.get("text"),
+                                      msg.get("attachments"))
+        body = (f"{sender}: {preview_text or '📎 attachment'}"
+                if sender else (preview_text or "📎 attachment"))
+        self._notifications.send(
+            g.get("name", "GroupMe"), body, tag=f"group-{gid}")
 
     # ── persistence ────────────────────────────────────────────────
     def _save_last_seen(self):

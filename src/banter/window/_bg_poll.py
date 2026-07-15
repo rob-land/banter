@@ -14,7 +14,8 @@ from gi.repository import GLib
 
 from ..async_utils import run_in_background
 from ..constants import DEMO
-from ..helpers import format_preview
+from ..helpers import (format_preview, is_hidden_system_message,
+                       resolve_group_last_message)
 
 log = logging.getLogger(__name__)
 
@@ -73,11 +74,10 @@ class BackgroundPollMixin:
         # sent. The local count of unread badges is also derived from
         # the same signal — there's no exact unread count without
         # fetching messages, so we just toggle a sidebar dot.
-        me_id   = str((self._current_user or {}).get("id", ""))
-        my_name = (self._current_user or {}).get("name", "")
-        any_unread = False
+        me_id = str((self._current_user or {}).get("id", ""))
 
         # ── Groups ──
+        changed_groups = []
         for g in groups:
             gid      = str(g["id"])
             key      = self._conv_key("group", gid)
@@ -96,35 +96,25 @@ class BackgroundPollMixin:
                 continue
             self._last_msg_ids[key] = last_id
 
-            # Move to top of unified chats list + refresh preview/time
-            preview = msgs.get("preview", {}) or {}
-            preview_text = format_preview(preview.get("text"),
-                                          preview.get("attachments"))
+            # Move to top + refresh timestamp now; the preview text
+            # and any notification wait for the group's real newest
+            # message — the index's preview blob skips system messages,
+            # so it's stale whenever the newest message is one (see
+            # resolve_group_last_message).
             if row is not None:
                 self.chats_list.remove(row)
                 self.chats_list.insert(row, 0)
                 ts = msgs.get("last_message_created_at")
                 if ts:
                     row.update_time(ts)
-                row.update_preview(preview.get("nickname", ""), preview_text)
+            changed_groups.append(g)
 
-            # Self-echo filter: group preview has nickname but no
-            # user_id, so we fall back to comparing against our own
-            # display name. Imperfect (a member with the same name
-            # would be filtered too) but the failure mode is "missed
-            # notification on a name collision" which is benign.
-            sender = preview.get("nickname", "")
-            from_me = bool(my_name) and sender == my_name
-            if from_me or self._is_conv_open("group", gid):
-                continue
-            any_unread = True
-            if row is not None:
-                row.bump_unread()
-            notif_text = preview_text or "📎 attachment"
-            self._send_desktop_notification(
-                g.get("name", "GroupMe"),
-                f"{sender}: {notif_text}" if sender else notif_text,
-                tag=f"group-{gid}")
+        if changed_groups:
+            def worker():
+                for g in changed_groups:
+                    msg = resolve_group_last_message(self._api, g)
+                    GLib.idle_add(self._finish_group_update, g, msg)
+            run_in_background(worker)
 
         # ── DMs ──
         log.debug("bg_poll: %d chats received", len(chats))
@@ -169,7 +159,6 @@ class BackgroundPollMixin:
                 other_id, sender_id, me_id, from_me, is_open)
             if from_me or is_open:
                 continue
-            any_unread = True
             if row is not None:
                 row.bump_unread()
             other_name = chat.get("other_user", {}).get("name", "Someone")
@@ -211,6 +200,44 @@ class BackgroundPollMixin:
             for r in self._rows.values())
         if hasattr(self, '_chats_page'):
             self.chats_stack_page.set_needs_attention(any_unread_persistent)
+
+    def _finish_group_update(self, g, msg):
+        """Second half of the group bg-poll path, once the group's real
+        newest message is known: refresh the sidebar preview and decide
+        whether to notify."""
+        if is_hidden_system_message(msg):
+            return
+        gid    = str(g["id"])
+        row    = self._rows.get(self._conv_key("group", gid))
+        sender = msg.get("name", "")
+        preview_text = format_preview(msg.get("text"),
+                                      msg.get("attachments"))
+        if row is not None:
+            row.update_preview(sender, preview_text)
+
+        # Self-echo filter. Full message objects carry the sender's
+        # user_id (exact match); the preview fallback only has the
+        # nickname, where we keep the display-name heuristic — a
+        # member with my name gets filtered too, but that failure
+        # mode is just a missed notification.
+        me_id     = str((self._current_user or {}).get("id", ""))
+        my_name   = (self._current_user or {}).get("name", "")
+        sender_id = str(msg.get("user_id") or msg.get("sender_id") or "")
+        if sender_id:
+            from_me = bool(me_id) and sender_id == me_id
+        else:
+            from_me = bool(my_name) and sender == my_name
+        if from_me or self._is_conv_open("group", gid):
+            return
+        if row is not None:
+            row.bump_unread()
+        if hasattr(self, '_chats_page'):
+            self.chats_stack_page.set_needs_attention(True)
+        notif_text = preview_text or "📎 attachment"
+        self._send_desktop_notification(
+            g.get("name", "GroupMe"),
+            f"{sender}: {notif_text}" if sender else notif_text,
+            tag=f"group-{gid}")
 
     def _send_desktop_notification(self, title: str, body: str,
                                     tag: str = "banter-msg",

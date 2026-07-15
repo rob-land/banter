@@ -48,6 +48,33 @@ def format_preview(text, attachments=None) -> str:
     return ""
 
 
+def resolve_group_last_message(api, group: dict) -> dict:
+    """Fetch a group's real newest message, for callers that detected
+    a last_message_id change in a /groups index response.
+
+    The index's `messages.preview` blob skips system messages
+    entirely: when the newest message is one ("X left the group",
+    a name change, …) the preview still shows the last human message,
+    so building a notification from it surfaces stale text. Falls
+    back to a preview-shaped pseudo-message if the fetch fails so
+    callers degrade to the old preview-based behaviour.
+
+    Blocking — call from a worker thread."""
+    gid = str(group["id"])
+    try:
+        msgs = api.get_messages(gid, limit=1)
+        if msgs:
+            return msgs[0]
+    except Exception as e:
+        log.debug("last-message fetch failed for group %s: %s", gid, e)
+    preview = (group.get("messages") or {}).get("preview") or {}
+    return {
+        "name":        preview.get("nickname") or "",
+        "text":        preview.get("text"),
+        "attachments": preview.get("attachments") or [],
+    }
+
+
 def is_hidden_system_message(msg: dict) -> bool:
     """Return True if `msg` is a GroupMe-issued system notification
     that the UI should suppress entirely.

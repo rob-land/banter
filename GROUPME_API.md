@@ -106,6 +106,19 @@ Method, path, body shape, and where each lives in `api.py`.
 | `POST /groups/{gid}/members/{membership_id}/remove` | Note: the path uses **membership_id**, not user_id. They're different. |
 | `POST /groups/{gid}/memberships/update` | Update your own nickname / membership prefs in a group. |
 
+**`messages.preview` skips system messages.** In the `GET /groups`
+index, each group's `messages` blob carries `last_message_id` /
+`last_message_created_at` for the true newest message, but the
+`preview` sub-object (`nickname`, `text`, `image_url`, `attachments`)
+always reflects the newest **non-system** message. Verified live
+(2026-07-15) by renaming an empty group: `count` went 0→2 and
+`last_message_id` advanced to the name-change system message, while
+`preview` stayed all-null. Consequence: anything that detects "new
+message" via `last_message_id` and renders from `preview` shows stale
+human text whenever the newest message is a system one ("X left the
+group", name changes, …) — fetch `GET /groups/{gid}/messages?limit=1`
+instead (`resolve_group_last_message` in `helpers.py`).
+
 ### Group messages
 
 | | |
