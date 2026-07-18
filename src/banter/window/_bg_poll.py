@@ -126,6 +126,13 @@ class BackgroundPollMixin:
             last_id  = lm.get("id")
             prev_id  = self._last_msg_ids.get(key)
 
+            # A DM with no sidebar row is a conversation started since
+            # the last load — materialise it at the top. This is the
+            # catch-up path for when the push event never arrived (or
+            # its /chats fetch failed).
+            if row is None:
+                row = self._insert_dm_row(chat)
+
             if not last_id:
                 log.debug("bg_poll: dm %s has no last_message.id, skipping", other_id)
                 continue

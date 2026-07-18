@@ -134,6 +134,37 @@ class SidebarMixin:
 
         return row
 
+    def _insert_dm_row(self, chat: dict):
+        """Add a single new DM conversation to the top of the chats list.
+
+        DM sibling of _insert_group_row, for the first-ever message from
+        a new contact — learned from a push or the background poll —
+        without a full sidebar rebuild. Idempotent: returns the existing
+        row if we already have one. Deliberately does NOT seed
+        _last_msg_ids, so the caller's notification path still treats
+        the first message as new."""
+        other_id = str(chat.get("other_user", {}).get("id", ""))
+        if not other_id:
+            return None
+        key = self._conv_key("dm", other_id)
+        existing = self._rows.get(key)
+        if existing is not None:
+            return existing
+
+        me_id = (self._current_user or {}).get("id")
+        row = ConversationRow(chat, "dm", self._config, me_id=me_id)
+        self.chats_list.insert(row, 0)
+        self._rows[key] = row
+
+        # Keep the cached DM list consistent for the next full rebuild.
+        # No push subscription needed — DM events arrive on the /user
+        # channel we're already listening to.
+        if not any(str(c.get("other_user", {}).get("id", "")) == other_id
+                   for c in self._all_dms):
+            self._all_dms.append(chat)
+
+        return row
+
     def _on_chats_activated(self, lb, row):
         if not isinstance(row, ConversationRow):
             return

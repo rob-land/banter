@@ -175,18 +175,26 @@ class PushMixin:
         other_id = sender_uid
         key      = self._conv_key("dm", other_id)
         row      = self._rows.get(key)
+        if row is None:
+            # First-ever message from a new contact — no sidebar row
+            # yet. Fetch the chat object (the push subject lacks the
+            # other_user shape ConversationRow needs), insert a row,
+            # then replay this event. Crucially _last_msg_ids stays
+            # unseeded here, so the bg poll remains armed as the
+            # catch-up path if the fetch comes back empty.
+            self._fetch_new_dm(other_id, subject)
+            return
 
         sender = subject.get("name") or "Someone"
         preview_text = format_preview(subject.get("text"),
                                       subject.get("attachments"))
 
-        if row is not None:
-            self.chats_list.remove(row)
-            self.chats_list.insert(row, 0)
-            ts = subject.get("created_at")
-            if ts:
-                row.update_time(ts)
-            row.update_preview(sender, preview_text)
+        self.chats_list.remove(row)
+        self.chats_list.insert(row, 0)
+        ts = subject.get("created_at")
+        if ts:
+            row.update_time(ts)
+        row.update_preview(sender, preview_text)
 
         # Mirror bg_poll bookkeeping so the next /chats poll doesn't
         # double-fire a notification for the same message.
@@ -203,7 +211,40 @@ class PushMixin:
 
         if self._is_conv_open("dm", other_id):
             return
-        if row is not None:
-            row.bump_unread()
+        row.bump_unread()
         self._send_desktop_notification(
             sender, preview_text or "📎 attachment", tag=f"dm-{other_id}")
+
+    def _fetch_new_dm(self, other_id: str, subject: dict):
+        """Background-fetch the chat object for a first-ever DM, then
+        replay the triggering push event once its sidebar row exists."""
+        if other_id in self._pending_dm_adds:
+            return   # a concurrent push already kicked off the fetch
+        self._pending_dm_adds.add(other_id)
+
+        def worker():
+            # There's no single-chat endpoint; the chat that just
+            # received a message sorts first, so page 1 of /chats is
+            # enough to find it.
+            chats = self._api.get_chats(page=1, per_page=20)
+            chat = next(
+                (c for c in chats
+                 if str(c.get("other_user", {}).get("id", "")) == other_id),
+                None)
+            GLib.idle_add(self._on_new_dm, other_id, chat, subject)
+
+        run_in_background(worker)
+
+    def _on_new_dm(self, other_id: str, chat: dict, subject: dict):
+        self._pending_dm_adds.discard(other_id)
+        if self._conv_key("dm", other_id) in self._rows:
+            # A full refresh (or the bg poll) added it while we fetched.
+            self._handle_dm_push_message(subject)
+            return
+        if not chat:
+            return   # bg poll's catch-up path will materialise the row
+        self._insert_dm_row(chat)
+        # Re-run the handler now that the row exists; it sets the
+        # preview, bumps unread and fires the desktop notification for
+        # the message that started the conversation.
+        self._handle_dm_push_message(subject)

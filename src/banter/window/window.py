@@ -119,6 +119,9 @@ class BanterWindow(
         # group we weren't tracking — dedupes concurrent "you were added"
         # events so we don't insert the same sidebar row twice.
         self._pending_group_adds : set = set()
+        # Same, for DMs: other-user ids with an in-flight /chats fetch
+        # after a first-ever message from a contact we had no row for.
+        self._pending_dm_adds : set = set()
         self._bg_poll_id   = None
         self._push         = None   # singleton GroupMePush for the whole session
         # Pending GLib.timeout id for the debounced offline-banner
